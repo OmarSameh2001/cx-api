@@ -4,11 +4,18 @@ import click
 import uvicorn
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 import models  # noqa: F401  registers all models on Base.metadata
 from db import Base
 from db import SessionLocal, engine
+from modules.auth.service import hash_password
+from modules.customers.model import Customer
+from modules.employees.model import Employee
+from modules.organisations.model import Organisation
+from modules.roles.model import Permission, Role, RolePermission
+from modules.subscriptions.model import SubscriptionPlan
+from modules.units.model import Unit
 
 
 def _alembic_cfg() -> Config:
@@ -111,6 +118,216 @@ def db_history():
 def db_stamp(revision: str):
     """Mark the database as being at REVISION without running migrations."""
     command.stamp(_alembic_cfg(), revision)
+
+
+@cli.command("db:seed")
+def db_seed():
+    """Seed dummy data for local login (organisation, units, roles, employees, customer)."""
+    db = SessionLocal()
+    try:
+        plan = db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.name == "Pro")
+        ).scalar_one_or_none()
+        if plan is None:
+            plan = SubscriptionPlan(name="Pro", benefits="All features included")
+            db.add(plan)
+            db.flush()
+
+        org = db.execute(
+            select(Organisation).where(Organisation.name == "Acme Corp")
+        ).scalar_one_or_none()
+        if org is None:
+            org = Organisation(
+                name="Acme Corp",
+                industry="Technology",
+                contact_info="contact@acme.com",
+                subscription_plan_id=plan.id,
+            )
+            db.add(org)
+            db.flush()
+
+        def upsert_unit(name, type_, parent_id=None):
+            existing = db.execute(
+                select(Unit).where(Unit.organisation_id == org.id, Unit.name == name)
+            ).scalar_one_or_none()
+            if existing:
+                return existing
+            unit = Unit(
+                name=name,
+                type=type_,
+                organisation_id=org.id,
+                parent_unit_id=parent_id,
+                is_active=True,
+            )
+            db.add(unit)
+            db.flush()
+            return unit
+
+        hq = upsert_unit("Headquarters", "company")
+        engineering = upsert_unit("Engineering", "department", hq.id)
+        sales = upsert_unit("Sales", "department", hq.id)
+        upsert_unit("Backend Team", "team", engineering.id)
+        upsert_unit("Frontend Team", "team", engineering.id)
+
+        permission_specs = [
+            ("customers", "read"),
+            ("customers", "write"),
+            ("employees", "read"),
+            ("employees", "write"),
+            ("units", "read"),
+            ("units", "write"),
+            ("organisations", "read"),
+            ("organisations", "write"),
+            ("forms", "read"),
+            ("forms", "write"),
+            ("submissions", "read"),
+            ("submissions", "write"),
+            ("roles", "read"),
+            ("roles", "write"),
+        ]
+        permissions: dict[tuple[str, str], Permission] = {}
+        for resource, action in permission_specs:
+            existing = db.execute(
+                select(Permission).where(
+                    Permission.resource == resource, Permission.action == action
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                existing = Permission(resource=resource, action=action)
+                db.add(existing)
+                db.flush()
+            permissions[(resource, action)] = existing
+
+        def upsert_role(name, is_system, perm_keys):
+            role = db.execute(
+                select(Role).where(Role.name == name)
+            ).scalar_one_or_none()
+            if role is None:
+                role = Role(name=name, is_system=is_system)
+                db.add(role)
+                db.flush()
+            existing_perm_ids = {rp.permission_id for rp in role.role_permissions}
+            for key in perm_keys:
+                perm = permissions[key]
+                if perm.id not in existing_perm_ids:
+                    db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+            db.flush()
+            return role
+
+        admin_role = upsert_role("admin", True, list(permissions.keys()))
+        manager_role = upsert_role(
+            "manager",
+            False,
+            [
+                ("customers", "read"),
+                ("customers", "write"),
+                ("employees", "read"),
+                ("units", "read"),
+                ("forms", "read"),
+                ("forms", "write"),
+                ("submissions", "read"),
+                ("submissions", "write"),
+            ],
+        )
+        agent_role = upsert_role(
+            "agent",
+            False,
+            [
+                ("customers", "read"),
+                ("forms", "read"),
+                ("submissions", "read"),
+                ("submissions", "write"),
+            ],
+        )
+
+        def upsert_employee(*, email, username, first, last, role, unit, manager_id=None):
+            existing = db.execute(
+                select(Employee).where(Employee.email == email)
+            ).scalar_one_or_none()
+            if existing:
+                return existing
+            employee = Employee(
+                first_name=first,
+                last_name=last,
+                username=username,
+                email=email,
+                password=hash_password("Password123!"),
+                is_active=True,
+                organisation_id=org.id,
+                unit_id=unit.id if unit else None,
+                role_id=role.id,
+                manager_id=manager_id,
+            )
+            db.add(employee)
+            db.flush()
+            return employee
+
+        admin = upsert_employee(
+            email="admin@acme.com",
+            username="admin",
+            first="Ada",
+            last="Admin",
+            role=admin_role,
+            unit=hq,
+        )
+        manager = upsert_employee(
+            email="manager@acme.com",
+            username="manager",
+            first="Mike",
+            last="Manager",
+            role=manager_role,
+            unit=engineering,
+            manager_id=admin.id,
+        )
+        upsert_employee(
+            email="agent@acme.com",
+            username="agent",
+            first="Alice",
+            last="Agent",
+            role=agent_role,
+            unit=engineering,
+            manager_id=manager.id,
+        )
+        upsert_employee(
+            email="sales@acme.com",
+            username="sales",
+            first="Sam",
+            last="Sales",
+            role=agent_role,
+            unit=sales,
+            manager_id=admin.id,
+        )
+
+        customer = db.execute(
+            select(Customer).where(Customer.email == "customer@acme.com")
+        ).scalar_one_or_none()
+        if customer is None:
+            db.add(
+                Customer(
+                    first_name="Carl",
+                    last_name="Customer",
+                    email="customer@acme.com",
+                    phone="+10000000000",
+                    is_auth=True,
+                    password=hash_password("Password123!"),
+                )
+            )
+
+        db.commit()
+
+        click.echo("Seed complete. Login credentials (password = Password123!):")
+        click.echo("  Employees:")
+        click.echo("    admin@acme.com    (admin)")
+        click.echo("    manager@acme.com  (manager)")
+        click.echo("    agent@acme.com    (agent)")
+        click.echo("    sales@acme.com    (agent)")
+        click.echo("  Customer:")
+        click.echo("    customer@acme.com")
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @cli.command("shell")

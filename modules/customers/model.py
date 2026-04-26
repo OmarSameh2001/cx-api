@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Date, String
+from sqlalchemy import ARRAY, Boolean, Date, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -22,5 +22,8 @@ class Customer(Base):
     password: Mapped[Optional[str]] = mapped_column(String(255))
     email_code: Mapped[Optional[str]] = mapped_column(String(16))
     profile_picture: Mapped[Optional[str]] = mapped_column(String(512))
+    refresh_tokens: Mapped[list[str]] = mapped_column(
+        ARRAY(String(64)), nullable=False, server_default="{}", default=list
+    )
 
     submissions: Mapped[List["Submission"]] = relationship(back_populates="customer")

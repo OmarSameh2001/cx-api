@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Date, ForeignKey, String
+from sqlalchemy import ARRAY, Boolean, Date, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -23,6 +23,9 @@ class Employee(Base):
     dob: Mapped[Optional[date]] = mapped_column("DOB", Date)
     gender: Mapped[Optional[str]] = mapped_column(String(16))
     profile_picture: Mapped[Optional[str]] = mapped_column(String(512))
+    refresh_tokens: Mapped[list[str]] = mapped_column(
+        ARRAY(String(64)), nullable=False, server_default="{}", default=list
+    )
 
     manager_id: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"), index=True)
     unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("units.id"), index=True)
