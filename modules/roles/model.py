@@ -1,11 +1,13 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
 
+if TYPE_CHECKING:
+    from ..employees.model import Employee
 
 class Role(Base):
     __tablename__ = "roles"

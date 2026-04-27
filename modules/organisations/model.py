@@ -1,11 +1,15 @@
 from datetime import date
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
 
+if TYPE_CHECKING:
+    from ..employees.model import Employee
+    from ..subscriptions.model import SubscriptionPlan
+    from ..units.model import Unit
 
 class Organisation(Base):
     __tablename__ = "organisations"

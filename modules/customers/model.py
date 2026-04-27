@@ -1,11 +1,13 @@
 from datetime import date
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import ARRAY, Boolean, Date, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
 
+if TYPE_CHECKING:
+    from ..submissions.model import Submission
 
 class Customer(Base):
     __tablename__ = "customers"

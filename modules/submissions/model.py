@@ -1,11 +1,15 @@
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
 
+if TYPE_CHECKING:
+    from ..customers.model import Customer
+    from ..employees.model import Employee
+    from ..forms.model import Form
 
 class Submission(Base):
     __tablename__ = "submissions"
