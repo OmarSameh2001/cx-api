@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -17,6 +17,9 @@ class Form(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[Optional[str]] = mapped_column(String(64))
     type: Mapped[Optional[str]] = mapped_column(String(64))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    submitter_type: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(64)), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -35,6 +38,7 @@ class FormField(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(255)))
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     right_answer: Mapped[Optional[str]] = mapped_column(Text)
     order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
