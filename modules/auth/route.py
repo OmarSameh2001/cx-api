@@ -73,16 +73,16 @@ def current_customer(p: Principal = Depends(current_principal)) -> CustomerPrinc
     return p
 
 
-def require_permissions(*needed: str):
-    def _checker(p: EmployeePrincipal = Depends(current_employee)) -> EmployeePrincipal:
-        missing = [perm for perm in needed if perm not in p.permissions]
-        if missing:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, f"Missing permissions: {', '.join(missing)}"
-            )
-        return p
+# def require_permissions(*needed: str):
+#     def _checker(p: EmployeePrincipal = Depends(current_employee)) -> EmployeePrincipal:
+#         missing = [perm for perm in needed if perm not in p.permissions]
+#         if missing:
+#             raise HTTPException(
+#                 status.HTTP_403_FORBIDDEN, f"Missing permissions: {', '.join(missing)}"
+#             )
+#         return p
 
-    return _checker
+#     return _checker
 
 
 @router.post("/employee/login", response_model=EmployeeLoginResponse)
