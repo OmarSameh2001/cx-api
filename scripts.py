@@ -14,6 +14,7 @@ from modules.customers.model import Customer
 from modules.employees.model import Employee
 from modules.organisations.model import Organisation
 from modules.roles.model import Permission, Role, RolePermission
+from modules.roles.permissions import PermissionKey
 from modules.subscriptions.model import SubscriptionPlan
 from modules.units.model import Unit
 
@@ -169,24 +170,8 @@ def db_seed():
         upsert_unit("Backend Team", "team", engineering.id)
         upsert_unit("Frontend Team", "team", engineering.id)
 
-        permission_specs = [
-            ("customers", "read"),
-            ("customers", "write"),
-            ("employees", "read"),
-            ("employees", "write"),
-            ("units", "read"),
-            ("units", "write"),
-            ("organisations", "read"),
-            ("organisations", "write"),
-            ("forms", "read"),
-            ("forms", "write"),
-            ("submissions", "read"),
-            ("submissions", "write"),
-            ("roles", "read"),
-            ("roles", "write"),
-        ]
         permissions: dict[tuple[str, str], Permission] = {}
-        for resource, action in permission_specs:
+        for resource, action in PermissionKey.all_pairs():
             existing = db.execute(
                 select(Permission).where(
                     Permission.resource == resource, Permission.action == action
@@ -220,13 +205,16 @@ def db_seed():
             False,
             [
                 ("customers", "read"),
-                ("customers", "write"),
+                ("customers", "create"),
+                ("customers", "update"),
                 ("employees", "read"),
                 ("units", "read"),
                 ("forms", "read"),
-                ("forms", "write"),
+                ("forms", "create"),
+                ("forms", "update"),
                 ("submissions", "read"),
-                ("submissions", "write"),
+                ("submissions", "create"),
+                ("submissions", "update"),
             ],
         )
         agent_role = upsert_role(
@@ -236,7 +224,7 @@ def db_seed():
                 ("customers", "read"),
                 ("forms", "read"),
                 ("submissions", "read"),
-                ("submissions", "write"),
+                ("submissions", "create"),
             ],
         )
 

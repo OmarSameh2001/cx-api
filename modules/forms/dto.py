@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-FieldType = Literal["single_choice", "multi_choice", "true_false", "text"]
+FieldType = Literal["single_choice", "multi_choice", "boolean", "text", "date", "phone_number", "email", "file", "scale"]
 SubmitterType = Literal["employee", "customer"]
 
 

@@ -9,6 +9,7 @@ from db import Base
 if TYPE_CHECKING:
     from ..employees.model import Employee
     from ..submissions.model import Submission
+    from ..organisations.model import Organisation
 
 class Form(Base):
     __tablename__ = "forms"
@@ -25,7 +26,12 @@ class Form(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"))
+    organisation_id: Mapped[int] = mapped_column(
+        ForeignKey("organisations.id"), nullable=False
+    )
+    assigned_to_units: Mapped[Optional[list[int]]] = mapped_column(ARRAY(Integer))
 
+    organisations: Mapped["Organisation"] = relationship(foreign_keys=[organisation_id])
     creator: Mapped[Optional["Employee"]] = relationship(foreign_keys=[created_by])
     fields: Mapped[List["FormField"]] = relationship(
         back_populates="form", cascade="all, delete-orphan", order_by="FormField.order"
