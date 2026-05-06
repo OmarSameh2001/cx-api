@@ -11,6 +11,7 @@ from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
 from modules.forms.route import router as forms_router
 from modules.roles.route import router as roles_router
+from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
 
 
@@ -37,6 +38,7 @@ app.include_router(forms_router)
 app.include_router(submissions_router)
 app.include_router(assignments_router)
 app.include_router(roles_router)
+app.include_router(lookups_router)
 
 
 @app.get("/")

@@ -51,10 +51,18 @@ class FormBase(BaseModel):
     type: Optional[str] = None
     description: Optional[str] = None
     submitter_type: list[SubmitterType] = Field(min_length=1)
+    assigned_to_units: Optional[list[int]] = None
 
     @field_validator("submitter_type")
     @classmethod
     def _unique(cls, v):
+        return list(dict.fromkeys(v))
+
+    @field_validator("assigned_to_units")
+    @classmethod
+    def _unique_units(cls, v):
+        if v is None:
+            return v
         return list(dict.fromkeys(v))
 
 
@@ -68,6 +76,7 @@ class FormUpdate(BaseModel):
     type: Optional[str] = None
     description: Optional[str] = None
     submitter_type: Optional[list[SubmitterType]] = None
+    assigned_to_units: Optional[list[int]] = None
     is_active: Optional[bool] = None
     is_archived: Optional[bool] = None
     fields: Optional[list[FormFieldCreate]] = None
