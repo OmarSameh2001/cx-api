@@ -1,6 +1,6 @@
 from typing import Iterable, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .model import Permission, Role, RolePermission
@@ -24,6 +24,10 @@ def get_role_by_name(db: Session, name: str) -> Optional[Role]:
 def list_roles(db: Session, *, limit: int = 100, offset: int = 0) -> list[Role]:
     stmt = select(Role).order_by(Role.name).limit(limit).offset(offset)
     return list(db.execute(stmt).scalars().all())
+
+
+def count_roles(db: Session) -> int:
+    return db.execute(select(func.count()).select_from(Role)).scalar_one()
 
 
 def create_role(db: Session, *, name: str, is_system: bool) -> Role:

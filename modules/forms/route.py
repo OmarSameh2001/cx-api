@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+from common.dto import Page
 from db import get_db
 from modules.auth.dto import EmployeePrincipal, Principal
 from modules.auth.route import current_employee, current_principal
@@ -14,7 +15,7 @@ from .dto import FormCreate, FormRead, FormSummary, FormUpdate
 router = APIRouter(prefix="/forms", tags=["forms"])
 
 
-@router.get("", response_model=list[FormSummary])
+@router.get("", response_model=Page[FormSummary])
 def list_forms(
     is_active: Optional[bool] = Query(default=None),
     is_archived: Optional[bool] = Query(default=None),

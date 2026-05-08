@@ -2,6 +2,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from common.dto import Page
+
 from . import service
 from .dto import AssignmentCreate, AssignmentRead, AssignmentUpdate
 
@@ -14,8 +16,8 @@ def list_assignments(
     assigned_by: Optional[int],
     limit: int,
     offset: int,
-) -> list[AssignmentRead]:
-    assignments = service.list_assignments(
+) -> Page[AssignmentRead]:
+    items, total = service.list_assignments(
         db,
         user_id=user_id,
         unit_id=unit_id,
@@ -23,7 +25,12 @@ def list_assignments(
         limit=limit,
         offset=offset,
     )
-    return [AssignmentRead.model_validate(a) for a in assignments]
+    return Page(
+        items=[AssignmentRead.model_validate(a) for a in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_assignment(db: Session, assignment_id: int) -> AssignmentRead:

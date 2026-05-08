@@ -36,8 +36,8 @@ def list_assignments(
     assigned_by: Optional[int],
     limit: int,
     offset: int,
-) -> list[Assignment]:
-    return repository.list_assignments(
+) -> tuple[list[Assignment], int]:
+    items = repository.list_assignments(
         db,
         user_id=user_id,
         unit_id=unit_id,
@@ -45,6 +45,13 @@ def list_assignments(
         limit=limit,
         offset=offset,
     )
+    total = repository.count_assignments(
+        db,
+        user_id=user_id,
+        unit_id=unit_id,
+        assigned_by=assigned_by,
+    )
+    return items, total
 
 
 def create_assignment(

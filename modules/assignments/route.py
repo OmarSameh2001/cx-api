@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+from common.dto import Page
 from db import get_db
 from modules.auth.dto import EmployeePrincipal, Principal
 from modules.auth.route import current_employee, current_principal
@@ -14,7 +15,7 @@ from .dto import AssignmentCreate, AssignmentRead, AssignmentUpdate
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
 
-@router.get("", response_model=list[AssignmentRead])
+@router.get("", response_model=Page[AssignmentRead])
 def list_assignments(
     user_id: Optional[int] = Query(default=None),
     unit_id: Optional[int] = Query(default=None),

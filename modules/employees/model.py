@@ -1,7 +1,7 @@
 from datetime import date
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ARRAY, Boolean, Date, ForeignKey, String
+from sqlalchemy import ARRAY, Boolean, Date, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -31,6 +31,9 @@ class Employee(Base):
     profile_picture: Mapped[Optional[str]] = mapped_column(String(512))
     refresh_tokens: Mapped[list[str]] = mapped_column(
         ARRAY(String(64)), nullable=False, server_default="{}", default=list
+    )
+    assigned_units: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), nullable=False, server_default="{}", default=list
     )
 
     manager_id: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"), index=True)

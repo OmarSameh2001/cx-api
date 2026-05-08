@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "db:migrate",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/Scripts/python.exe",
+            "args": ["scripts.py", "db:migrate", "-m", "${input:migrationMessage}"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONUNBUFFERED": "1"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "migrationMessage",
+            "type": "promptString",
+            "description": "Migration message"
+        }
+    ]
+}

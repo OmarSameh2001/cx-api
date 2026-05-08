@@ -106,12 +106,12 @@ def list_submissions(
     form_id: Optional[int],
     limit: int,
     offset: int,
-) -> list[Submission]:
+) -> tuple[list[Submission], int]:
     customer_id: Optional[int] = None
     user_id: Optional[int] = None
     if principal_type == "customer":
         customer_id = principal_id
-    return repository.list_submissions(
+    items = repository.list_submissions(
         db,
         form_id=form_id,
         customer_id=customer_id,
@@ -119,6 +119,13 @@ def list_submissions(
         limit=limit,
         offset=offset,
     )
+    total = repository.count_submissions(
+        db,
+        form_id=form_id,
+        customer_id=customer_id,
+        user_id=user_id,
+    )
+    return items, total
 
 
 def create_submission(

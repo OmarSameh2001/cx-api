@@ -2,6 +2,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from common.dto import Page
+
 from . import service
 from .dto import FormCreate, FormRead, FormSummary, FormUpdate
 
@@ -15,8 +17,8 @@ def list_forms(
     created_by: Optional[int],
     limit: int,
     offset: int,
-) -> list[FormSummary]:
-    forms = service.list_forms(
+) -> Page[FormSummary]:
+    items, total = service.list_forms(
         db,
         is_active=is_active,
         is_archived=is_archived,
@@ -25,7 +27,12 @@ def list_forms(
         limit=limit,
         offset=offset,
     )
-    return [FormSummary.model_validate(f) for f in forms]
+    return Page(
+        items=[FormSummary.model_validate(f) for f in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_form(db: Session, form_id: int) -> FormRead:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from common.decorator.permission import require_permission
+from common.dto import Page
 from db import get_db
 from modules.auth.dto import EmployeePrincipal
 from modules.auth.route import current_employee
@@ -61,7 +62,7 @@ def delete_permission(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("", response_model=list[RoleSummary])
+@router.get("", response_model=Page[RoleSummary])
 @require_permission("roles:read")
 def list_roles(
     limit: int = Query(default=100, ge=1, le=200),

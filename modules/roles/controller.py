@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from common.dto import Page
+
 from . import service
 from .dto import (
     PermissionCreate,
@@ -25,9 +27,14 @@ def _to_role_read(role: Role) -> RoleRead:
     )
 
 
-def list_roles(db: Session, *, limit: int, offset: int) -> list[RoleSummary]:
-    roles = service.list_roles(db, limit=limit, offset=offset)
-    return [RoleSummary.model_validate(r) for r in roles]
+def list_roles(db: Session, *, limit: int, offset: int) -> Page[RoleSummary]:
+    items, total = service.list_roles(db, limit=limit, offset=offset)
+    return Page(
+        items=[RoleSummary.model_validate(r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_role(db: Session, role_id: int) -> RoleRead:

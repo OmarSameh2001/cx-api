@@ -11,6 +11,18 @@
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "jinja": true
+        },
+        {
+            "name": "DB: migrate + upgrade",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts.py",
+            "args": ["db:upgrade"],
+            "python": "${workspaceFolder}/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "preLaunchTask": "db:migrate"
         }
     ]
 }

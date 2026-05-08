@@ -35,8 +35,8 @@ def list_forms(
     created_by: Optional[int],
     limit: int,
     offset: int,
-) -> list[Form]:
-    return repository.list_forms(
+) -> tuple[list[Form], int]:
+    items = repository.list_forms(
         db,
         is_active=is_active,
         is_archived=is_archived,
@@ -45,6 +45,14 @@ def list_forms(
         limit=limit,
         offset=offset,
     )
+    total = repository.count_forms(
+        db,
+        is_active=is_active,
+        is_archived=is_archived,
+        submitter_type=submitter_type,
+        created_by=created_by,
+    )
+    return items, total
 
 
 def create_form(db: Session, *, payload: FormCreate, employee_id: int) -> Form:

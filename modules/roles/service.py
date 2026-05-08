@@ -40,8 +40,10 @@ def get_role(db: Session, role_id: int) -> Role:
     return _ensure_role(db, role_id)
 
 
-def list_roles(db: Session, *, limit: int, offset: int) -> list[Role]:
-    return repository.list_roles(db, limit=limit, offset=offset)
+def list_roles(db: Session, *, limit: int, offset: int) -> tuple[list[Role], int]:
+    items = repository.list_roles(db, limit=limit, offset=offset)
+    total = repository.count_roles(db)
+    return items, total
 
 
 def create_role(db: Session, *, payload: RoleCreate, employee_id: int) -> Role:

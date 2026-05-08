@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+from common.dto import Page
 from db import get_db
 from modules.auth.dto import Principal
 from modules.auth.route import current_principal
@@ -14,7 +15,7 @@ from .dto import SubmissionCreate, SubmissionRead, SubmissionUpdate
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
 
-@router.get("", response_model=list[SubmissionRead])
+@router.get("", response_model=Page[SubmissionRead])
 def list_submissions(
     form_id: Optional[int] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),

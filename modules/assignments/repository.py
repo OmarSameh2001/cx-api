@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .model import Assignment
@@ -28,6 +28,23 @@ def list_assignments(
         stmt = stmt.where(Assignment.assigned_by == assigned_by)
     stmt = stmt.order_by(Assignment.assigned_at.desc()).limit(limit).offset(offset)
     return list(db.execute(stmt).scalars().all())
+
+
+def count_assignments(
+    db: Session,
+    *,
+    user_id: Optional[int] = None,
+    unit_id: Optional[int] = None,
+    assigned_by: Optional[int] = None,
+) -> int:
+    stmt = select(func.count()).select_from(Assignment)
+    if user_id is not None:
+        stmt = stmt.where(Assignment.user_id == user_id)
+    if unit_id is not None:
+        stmt = stmt.where(Assignment.unit_id == unit_id)
+    if assigned_by is not None:
+        stmt = stmt.where(Assignment.assigned_by == assigned_by)
+    return db.execute(stmt).scalar_one()
 
 
 def create_assignment(

@@ -2,6 +2,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from common.dto import Page
+
 from . import service
 from .dto import SubmissionCreate, SubmissionRead, SubmissionUpdate
 
@@ -14,8 +16,8 @@ def list_submissions(
     form_id: Optional[int],
     limit: int,
     offset: int,
-) -> list[SubmissionRead]:
-    items = service.list_submissions(
+) -> Page[SubmissionRead]:
+    items, total = service.list_submissions(
         db,
         principal_type=principal_type,
         principal_id=principal_id,
@@ -23,7 +25,12 @@ def list_submissions(
         limit=limit,
         offset=offset,
     )
-    return [SubmissionRead.model_validate(i) for i in items]
+    return Page(
+        items=[SubmissionRead.model_validate(i) for i in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_submission(
