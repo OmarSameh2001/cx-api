@@ -46,7 +46,9 @@ class EmployeeSummary(BaseModel):
     email: str
     is_active: bool
     role_id: Optional[int]
+    role_name: Optional[str] = None
     unit_id: Optional[int]
+    unit_name: Optional[str] = None
     organisation_id: int
     assigned_units: list[int] = []
 

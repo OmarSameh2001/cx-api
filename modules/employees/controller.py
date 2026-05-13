@@ -21,12 +21,13 @@ def list_employees(
         limit=limit,
         offset=offset,
     )
-    return Page(
-        items=[EmployeeSummary.model_validate(e) for e in items],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    summaries: list[EmployeeSummary] = []
+    for e in items:
+        summary = EmployeeSummary.model_validate(e)
+        summary.role_name = e.role.name if e.role else None
+        summary.unit_name = e.unit.name if e.unit else None
+        summaries.append(summary)
+    return Page(items=summaries, total=total, limit=limit, offset=offset)
 
 
 def get_employee(

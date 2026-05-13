@@ -35,7 +35,7 @@ def list_permissions(db: Session = Depends(get_db)):
     response_model=PermissionRead,
     status_code=status.HTTP_201_CREATED,
 )
-@require_permission("roles:write")
+@require_permission("roles:create")
 def create_permission(
     payload: PermissionCreate,
     db: Session = Depends(get_db),
@@ -44,7 +44,7 @@ def create_permission(
 
 
 @router.post("/permissions/seed", response_model=SeedResult)
-@require_permission("roles:write")
+@require_permission("roles:create")
 def seed_permissions(db: Session = Depends(get_db)):
     return controller.seed_permissions(db)
 
@@ -53,7 +53,7 @@ def seed_permissions(db: Session = Depends(get_db)):
     "/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-@require_permission("roles:write")
+@require_permission("roles:delete")
 def delete_permission(
     permission_id: int,
     db: Session = Depends(get_db),
@@ -73,7 +73,7 @@ def list_roles(
 
 
 @router.post("", response_model=RoleRead, status_code=status.HTTP_201_CREATED)
-@require_permission("roles:write")
+@require_permission("roles:create")
 def create_role(
     payload: RoleCreate,
     db: Session = Depends(get_db),
@@ -92,7 +92,7 @@ def get_role(
 
 
 @router.patch("/{role_id}", response_model=RoleRead)
-@require_permission("roles:write")
+@require_permission("roles:update")
 def update_role(
     role_id: int,
     payload: RoleUpdate,
@@ -102,7 +102,7 @@ def update_role(
 
 
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
-@require_permission("roles:write")
+@require_permission("roles:delete")
 def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
@@ -112,7 +112,7 @@ def delete_role(
 
 
 @router.put("/{role_id}/permissions", response_model=RoleRead)
-@require_permission("roles:write")
+@require_permission("roles:update")
 def replace_role_permissions(
     role_id: int,
     payload: RolePermissionsReplace,
@@ -123,7 +123,7 @@ def replace_role_permissions(
 
 
 @router.post("/{role_id}/permissions", response_model=RoleRead)
-@require_permission("roles:write")
+@require_permission("roles:update")
 def add_role_permissions(
     role_id: int,
     payload: RolePermissionsAdd,
@@ -137,7 +137,7 @@ def add_role_permissions(
     "/{role_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-@require_permission("roles:write")
+@require_permission("roles:delete")
 def remove_role_permission(
     role_id: int,
     permission_id: int,

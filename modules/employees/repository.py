@@ -1,7 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .model import Employee
 
@@ -39,7 +39,12 @@ def list_employees(
         stmt = stmt.where(Employee.unit_id.in_(unit_ids))
     else:
         return []
-    stmt = stmt.order_by(Employee.last_name, Employee.first_name).limit(limit).offset(offset)
+    stmt = (
+        stmt.options(joinedload(Employee.role), joinedload(Employee.unit))
+        .order_by(Employee.last_name, Employee.first_name)
+        .limit(limit)
+        .offset(offset)
+    )
     return list(db.execute(stmt).scalars().all())
 
 

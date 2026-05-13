@@ -21,7 +21,7 @@ def require_permission(*needed: str, mode: Mode = "all") -> Callable:
         @require_permission("forms:read")
         def list_forms(...): ...
 
-        @require_permission("forms:write", "forms:admin", mode="any")
+        @require_permission("forms:create", "forms:admin", mode="any")
         def update_form(...): ...
     """
     if not needed:
@@ -53,7 +53,7 @@ def require_permission(*needed: str, mode: Mode = "all") -> Callable:
             if missing:
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN,
-                    f"Missing permissions: {', '.join(missing)}",
+                    f"You dont have the required permissions: {', '.join(missing)}",
                 )
 
         if inspect.iscoroutinefunction(func):
