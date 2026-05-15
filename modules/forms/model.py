@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, ARRAY
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -17,11 +18,18 @@ class Form(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[Optional[str]] = mapped_column(String(64))
-    type: Mapped[Optional[str]] = mapped_column(String(64))
+    type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="questionnaire", server_default="questionnaire"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     submitter_type: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(64)), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
+    time_limit_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    max_attempts: Mapped[Optional[int]] = mapped_column(Integer)
+    results_revealed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -30,6 +38,7 @@ class Form(Base):
         ForeignKey("organisations.id"), nullable=False
     )
     assigned_to_units: Mapped[Optional[list[int]]] = mapped_column(ARRAY(Integer))
+    public_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
 
     organisations: Mapped["Organisation"] = relationship(foreign_keys=[organisation_id])
     creator: Mapped[Optional["Employee"]] = relationship(foreign_keys=[created_by])
@@ -37,6 +46,10 @@ class Form(Base):
         back_populates="form", cascade="all, delete-orphan", order_by="FormField.order"
     )
     submissions: Mapped[List["Submission"]] = relationship(back_populates="form")
+
+    __table_args__ = (
+        Index("ix_forms_org_active_archived", "organisation_id", "is_active", "is_archived"),
+    )
 
 
 class FormField(Base):

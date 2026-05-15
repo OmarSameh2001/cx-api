@@ -1,11 +1,24 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-FieldType = Literal["single_choice", "multi_choice", "boolean", "text", "date", "phone_number", "email", "file", "scale"]
+FieldType = Literal[
+    "single_choice",
+    "multi_choice",
+    "boolean",
+    "text",
+    "date",
+    "phone_number",
+    "email",
+    "file",
+    "scale",
+]
 SubmitterType = Literal["employee", "customer"]
+FormType = Literal["questionnaire", "exam"]
+
+AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean"}
 
 
 class FormFieldBase(BaseModel):
@@ -33,6 +46,21 @@ class FormFieldBase(BaseModel):
         type_ = info.data.get("type")
         if type_ == "text":
             return None
+        if v is None:
+            return v
+        options = info.data.get("options") or []
+        if type_ == "single_choice":
+            if v not in options:
+                raise ValueError("right_answer must be one of options for single_choice")
+        elif type_ == "multi_choice":
+            parts = {p.strip() for p in v.split(",") if p.strip()}
+            if not parts:
+                raise ValueError("right_answer must list at least one option for multi_choice")
+            if not parts.issubset(set(options)):
+                raise ValueError("right_answer values must all be in options for multi_choice")
+        elif type_ == "boolean":
+            if v.strip().lower() not in {"true", "false"}:
+                raise ValueError("right_answer for boolean must be 'true' or 'false'")
         return v
 
 
@@ -48,10 +76,13 @@ class FormFieldRead(FormFieldBase):
 class FormBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     source_type: Optional[str] = None
-    type: Optional[str] = None
+    type: FormType = "questionnaire"
     description: Optional[str] = None
     submitter_type: list[SubmitterType] = Field(min_length=1)
     assigned_to_units: Optional[list[int]] = None
+    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
+    max_attempts: Optional[int] = Field(default=None, ge=1)
+    results_revealed: bool = False
 
     @field_validator("submitter_type")
     @classmethod
@@ -69,14 +100,26 @@ class FormBase(BaseModel):
 class FormCreate(FormBase):
     fields: list[FormFieldCreate] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _validate_exam_constraints(self):
+        if self.type == "exam":
+            if not any(f.type in AUTO_GRADABLE_TYPES for f in self.fields):
+                raise ValueError("exam forms must contain at least one auto-gradable field")
+            if self.max_attempts is None:
+                self.max_attempts = 1
+        return self
+
 
 class FormUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     source_type: Optional[str] = None
-    type: Optional[str] = None
+    type: Optional[FormType] = None
     description: Optional[str] = None
     submitter_type: Optional[list[SubmitterType]] = None
     assigned_to_units: Optional[list[int]] = None
+    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
+    max_attempts: Optional[int] = Field(default=None, ge=1)
+    results_revealed: Optional[bool] = None
     is_active: Optional[bool] = None
     is_archived: Optional[bool] = None
     fields: Optional[list[FormFieldCreate]] = None
@@ -87,6 +130,7 @@ class FormRead(FormBase):
     id: int
     is_active: bool
     is_archived: bool
+    public_token: Optional[str] = None
     created_at: datetime
     created_by: Optional[int]
     fields: list[FormFieldRead] = []
@@ -96,9 +140,21 @@ class FormSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
-    type: Optional[str]
+    type: str
     is_active: bool
     is_archived: bool
     submitter_type: list[str]
+    assigned_to_units: Optional[list[int]] = None
+    time_limit_minutes: Optional[int] = None
+    max_attempts: Optional[int] = None
+    results_revealed: bool = False
     created_at: datetime
     created_by: Optional[int]
+
+
+MyStatus = Literal["not_started", "in_progress", "submitted", "late", "expired"]
+
+
+class AssignedFormSummary(FormSummary):
+    my_status: MyStatus = "not_started"
+    attempts_used: int = 0

@@ -11,6 +11,7 @@ from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
 from modules.forms.route import router as forms_router
+from modules.public.route import router as public_router
 from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="cx-api", lifespan=lifespan)
 
-app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -41,6 +42,7 @@ app.include_router(submissions_router)
 app.include_router(assignments_router)
 app.include_router(roles_router)
 app.include_router(lookups_router)
+app.include_router(public_router)
 
 
 @app.get("/")
