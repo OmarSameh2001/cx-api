@@ -11,10 +11,12 @@ from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
 from modules.forms.route import router as forms_router
+from modules.organisations.route import router as organisations_router
 from modules.public.route import router as public_router
 from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
+from modules.units.route import router as units_router
 
 
 @asynccontextmanager
@@ -41,6 +43,8 @@ app.include_router(forms_router)
 app.include_router(submissions_router)
 app.include_router(assignments_router)
 app.include_router(roles_router)
+app.include_router(organisations_router)
+app.include_router(units_router)
 app.include_router(lookups_router)
 app.include_router(public_router)
 
