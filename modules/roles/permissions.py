@@ -8,6 +8,11 @@ class PermissionKey:
         "submissions",
         "assignments",
         "roles",
+        "tenants",
+        "mentions",
+        "keywords",
+        "notification_rules",
+        "notification_deliveries",
     ]
 
     ACTIONS = [

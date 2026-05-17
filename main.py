@@ -17,6 +17,12 @@ from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
 from modules.units.route import router as units_router
+from modules.tenants.route import router as tenants_router
+from modules.keywords.route import router as keywords_router
+from modules.mentions.route import router as mentions_router
+from modules.platform_configs.route import router as platform_configs_router
+from modules.notification_rules.route import router as notification_rules_router
+from modules.notification_deliveries.route import router as notification_deliveries_router
 
 
 @asynccontextmanager
@@ -47,6 +53,12 @@ app.include_router(organisations_router)
 app.include_router(units_router)
 app.include_router(lookups_router)
 app.include_router(public_router)
+app.include_router(tenants_router)
+app.include_router(keywords_router)
+app.include_router(mentions_router)
+app.include_router(platform_configs_router)
+app.include_router(notification_rules_router)
+app.include_router(notification_deliveries_router)
 
 
 @app.get("/")
