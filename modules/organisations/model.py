@@ -9,6 +9,7 @@ from db import Base
 if TYPE_CHECKING:
     from ..employees.model import Employee
     from ..subscriptions.model import SubscriptionPlan
+    from ..tenants.model import Tenant
     from ..units.model import Unit
 
 class Organisation(Base):
@@ -28,6 +29,9 @@ class Organisation(Base):
 
     subscription_plan: Mapped[Optional["SubscriptionPlan"]] = relationship(
         back_populates="organisations"
+    )
+    tenant: Mapped[Optional["Tenant"]] = relationship(
+        back_populates="organisation", uselist=False
     )
     units: Mapped[List["Unit"]] = relationship(back_populates="organisation")
     employees: Mapped[List["Employee"]] = relationship(back_populates="organisation")
