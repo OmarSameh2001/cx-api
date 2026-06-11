@@ -2,8 +2,14 @@ from modules.assignments.model import *
 from modules.customers.model import *
 from modules.employees.model import *
 from modules.forms.model import *
+from modules.keywords.model import *
+from modules.mentions.model import *
+from modules.notification_deliveries.model import *
+from modules.notification_rules.model import *
 from modules.organisations.model import *
+from modules.platform_configs.model import *
 from modules.roles.model import *
 from modules.submissions.model import *
 from modules.subscriptions.model import *
+from modules.tenants.model import *
 from modules.units.model import *
