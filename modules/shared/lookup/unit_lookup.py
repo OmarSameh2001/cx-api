@@ -15,13 +15,18 @@ class UnitLookup(BaseModel):
 def search_units(
     db: Session,
     *,
-    allowed_ids: list[int],
+    allowed_ids: Optional[list[int]],
+    organisation_id: Optional[int] = None,
     search: Optional[str] = None,
     limit: int = 20,
 ) -> list[UnitLookup]:
-    if not allowed_ids:
-        return []
-    stmt = select(Unit).where(Unit.id.in_(allowed_ids), Unit.is_active.is_(True))
+    stmt = select(Unit).where(Unit.is_active.is_(True))
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        stmt = stmt.where(Unit.id.in_(allowed_ids))
+    elif organisation_id is not None:
+        stmt = stmt.where(Unit.organisation_id == organisation_id)
     if search:
         stmt = stmt.where(Unit.name.ilike(f"%{search}%"))
     rows = db.execute(stmt.limit(limit)).scalars().all()

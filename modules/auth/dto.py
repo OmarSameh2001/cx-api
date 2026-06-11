@@ -25,6 +25,7 @@ class EmployeeInfo(BaseModel):
     email: EmailStr
     role_id: Optional[int] = None
     role: Optional[str] = None
+    is_admin: bool = False
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []
     permissions: list[str] = []
@@ -60,6 +61,7 @@ class EmployeePrincipal(BasePrincipal):
     organisation_id: int
     role_id: Optional[int] = None
     role: Optional[str] = None
+    is_admin: bool = False
     permissions: list[str] = []
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []

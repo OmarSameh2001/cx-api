@@ -44,7 +44,13 @@ def units_lookup(
     db: Session = Depends(get_db),
     emp: EmployeePrincipal = Depends(current_employee),
 ):
-    return search_units(db, allowed_ids=emp.assigned_unit_ids, search=search, limit=limit)
+    return search_units(
+        db,
+        allowed_ids=None if emp.is_admin else emp.assigned_unit_ids,
+        organisation_id=emp.organisation_id,
+        search=search,
+        limit=limit,
+    )
 
 
 @router.get("/forms", response_model=list[FormLookup])

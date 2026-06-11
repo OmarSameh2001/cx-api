@@ -97,10 +97,12 @@ def _decode_refresh_token(token: str) -> dict[str, Any]:
 def _build_employee_claims(db: Session, employee) -> dict:
     permissions: list[str] = []
     role_name: Optional[str] = None
+    is_admin: bool = False
     if employee.role_id is not None:
         permissions = repository.list_permission_names_for_role(db, employee.role_id)
         role = repository.get_role_with_permissions(db, employee.role_id)
         role_name = role.name if role else None
+        is_admin = role.is_system if role else False
 
     assigned_unit_ids: list[int] = []
     if employee.unit_id is not None:
@@ -113,6 +115,7 @@ def _build_employee_claims(db: Session, employee) -> dict:
         "organisation_id": employee.organisation_id,
         "role_id": employee.role_id,
         "role": role_name,
+        "is_admin": is_admin,
         "permissions": permissions,
         "unit_id": employee.unit_id,
         "assigned_unit_ids": assigned_unit_ids,

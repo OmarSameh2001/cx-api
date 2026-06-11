@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -223,7 +223,7 @@ def list_assigned_to_me(
     for s in rows:
         by_form.setdefault(s.form_id, []).append(s)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     items: list[dict] = []
     for form in forms:
         subs = by_form.get(form.id, [])
