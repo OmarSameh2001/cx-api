@@ -70,17 +70,36 @@ def _validate_required(form: Form, answers: dict[str, Any]) -> None:
 
 
 def _score(form: Form, answers: dict[str, Any]) -> float:
-    """Score auto-gradable fields. Text/file/etc. contribute 0 (manual grading)."""
-    total = 0.0
+    if not form.sections:
+        total = 0.0
+        for field in form.fields:
+            if field.type not in AUTO_GRADABLE:
+                continue
+            if _is_correct(field, answers.get(str(field.id))):
+                total += field.score_weight
+        return total
+
+    # Section-weighted scoring — returns 0–100
+    total_sw = sum(s["score_weight"] for s in form.sections)
+    if not total_sw:
+        return 0.0
+    gradable_by_section: dict[int, list[FormField]] = {}
     for field in form.fields:
-        if field.type not in AUTO_GRADABLE:
+        if field.type in AUTO_GRADABLE:
+            sid = field.section_id
+            gradable_by_section.setdefault(sid, []).append(field)
+    score = 0.0
+    for section in form.sections:
+        fields = gradable_by_section.get(section["id"], [])
+        total_fw = sum(f.score_weight for f in fields)
+        if not fields or not total_fw:
             continue
-        provided = answers.get(str(field.id))
-        if provided is None:
-            continue
-        if _is_correct(field, provided):
-            total += field.score_weight
-    return total
+        earned = sum(
+            f.score_weight for f in fields
+            if _is_correct(f, answers.get(str(f.id)))
+        )
+        score += (section["score_weight"] / total_sw) * (earned / total_fw) * 100
+    return score
 
 
 def _ensure_submitter_allowed(form: Form, principal_type: str) -> None:

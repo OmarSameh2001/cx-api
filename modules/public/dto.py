@@ -25,6 +25,7 @@ class PublicFormField(BaseModel):
     order: int
     help_text: Optional[str] = None
     is_required: bool
+    section_id: Optional[int] = None
 
 
 class PublicForm(BaseModel):
@@ -34,6 +35,7 @@ class PublicForm(BaseModel):
     description: Optional[str] = None
     type: str
     fields: list[PublicFormField] = []
+    sections: Optional[list[dict]] = None
 
 
 class PublicSubmitResponse(BaseModel):

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -39,6 +39,7 @@ class Form(Base):
     )
     assigned_to_units: Mapped[Optional[list[int]]] = mapped_column(ARRAY(Integer))
     public_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
+    sections: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
 
     organisations: Mapped["Organisation"] = relationship(foreign_keys=[organisation_id])
     creator: Mapped[Optional["Employee"]] = relationship(foreign_keys=[created_by])
@@ -66,5 +67,6 @@ class FormField(Base):
     score_weight: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)
+    section_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     form: Mapped["Form"] = relationship(back_populates="fields")

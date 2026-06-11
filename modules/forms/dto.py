@@ -21,6 +21,14 @@ FormType = Literal["questionnaire", "exam"]
 AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean"}
 
 
+class FormSectionPayload(BaseModel):
+    id: int
+    title: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    order: int = 0
+    score_weight: float = Field(default=1.0, gt=0)
+
+
 class FormFieldBase(BaseModel):
     question: str = Field(min_length=1)
     type: FieldType
@@ -30,6 +38,7 @@ class FormFieldBase(BaseModel):
     help_text: Optional[str] = None
     is_required: bool = False
     score_weight: float = 0.0
+    section_id: Optional[int] = None
 
     @field_validator("options")
     @classmethod
@@ -99,9 +108,20 @@ class FormBase(BaseModel):
 
 class FormCreate(FormBase):
     fields: list[FormFieldCreate] = Field(min_length=1)
+    sections: Optional[list[FormSectionPayload]] = None
 
     @model_validator(mode="after")
-    def _validate_exam_constraints(self):
+    def _validate_constraints(self):
+        if self.sections:
+            section_ids = {s.id for s in self.sections}
+            if any(f.section_id is None for f in self.fields):
+                raise ValueError("all fields must have a section_id when sections are defined")
+            bad = [f.section_id for f in self.fields if f.section_id not in section_ids]
+            if bad:
+                raise ValueError(f"fields reference unknown section ids: {bad}")
+        else:
+            if any(f.section_id is not None for f in self.fields):
+                raise ValueError("section_id on fields requires sections to be defined")
         if self.type == "exam":
             if not any(f.type in AUTO_GRADABLE_TYPES for f in self.fields):
                 raise ValueError("exam forms must contain at least one auto-gradable field")
@@ -123,6 +143,21 @@ class FormUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_archived: Optional[bool] = None
     fields: Optional[list[FormFieldCreate]] = None
+    sections: Optional[list[FormSectionPayload]] = None
+
+    @model_validator(mode="after")
+    def _validate_sections(self):
+        if self.sections is not None and self.fields is not None:
+            section_ids = {s.id for s in self.sections}
+            if any(f.section_id is None for f in self.fields):
+                raise ValueError("all fields must have a section_id when sections are defined")
+            bad = [f.section_id for f in self.fields if f.section_id not in section_ids]
+            if bad:
+                raise ValueError(f"fields reference unknown section ids: {bad}")
+        elif self.sections is None and self.fields is not None:
+            if any(f.section_id is not None for f in self.fields):
+                raise ValueError("section_id on fields requires sections to be defined")
+        return self
 
 
 class FormRead(FormBase):
@@ -134,6 +169,7 @@ class FormRead(FormBase):
     created_at: datetime
     created_by: Optional[int]
     fields: list[FormFieldRead] = []
+    sections: Optional[list[dict]] = None
 
 
 class FormSummary(BaseModel):
