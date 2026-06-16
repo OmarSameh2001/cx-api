@@ -4,6 +4,7 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.services.text_scoring.scorer import score_text
 from modules.auth.dto import EmployeePrincipal, Principal
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form, FormField
@@ -18,7 +19,7 @@ from .model import Submission
 
 
 GRACE = timedelta(seconds=30)
-AUTO_GRADABLE = {"single_choice", "multi_choice", "boolean"}
+AUTO_GRADABLE = {"single_choice", "multi_choice", "boolean", "text"}
 
 
 def _now() -> datetime:
@@ -35,16 +36,20 @@ def _normalize_multi(value: Any) -> set[str]:
     return {str(value).strip()}
 
 
-def _is_correct(field: FormField, answer: Any) -> bool:
+def _correctness_fraction(field: FormField, answer: Any) -> float:
     if field.right_answer is None:
-        return False
+        return 0.0
     if field.type == "multi_choice":
-        return _normalize_multi(answer) == _normalize_multi(field.right_answer)
+        return 1.0 if _normalize_multi(answer) == _normalize_multi(field.right_answer) else 0.0
     if field.type == "boolean":
-        return str(answer).strip().lower() == field.right_answer.strip().lower()
+        return 1.0 if str(answer).strip().lower() == field.right_answer.strip().lower() else 0.0
     if field.type == "single_choice":
-        return str(answer).strip() == field.right_answer.strip()
-    return False
+        return 1.0 if str(answer).strip() == field.right_answer.strip() else 0.0
+    if field.type == "text":
+        if answer is None or not str(answer).strip():
+            return 0.0
+        return score_text(str(answer), field.right_answer)
+    return 0.0
 
 
 def _required_missing(field: FormField, answers: dict[str, Any]) -> bool:
@@ -75,8 +80,7 @@ def _score(form: Form, answers: dict[str, Any]) -> float:
         for field in form.fields:
             if field.type not in AUTO_GRADABLE:
                 continue
-            if _is_correct(field, answers.get(str(field.id))):
-                total += field.score_weight
+            total += field.score_weight * _correctness_fraction(field, answers.get(str(field.id)))
         return total
 
     # Section-weighted scoring — returns 0–100
@@ -95,8 +99,8 @@ def _score(form: Form, answers: dict[str, Any]) -> float:
         if not fields or not total_fw:
             continue
         earned = sum(
-            f.score_weight for f in fields
-            if _is_correct(f, answers.get(str(f.id)))
+            f.score_weight * _correctness_fraction(f, answers.get(str(f.id)))
+            for f in fields
         )
         score += (section["score_weight"] / total_sw) * (earned / total_fw) * 100
     return score
