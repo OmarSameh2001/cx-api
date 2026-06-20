@@ -22,6 +22,9 @@ def list_submissions(
     form_id: Optional[int],
     mine_only: bool,
     status_in: Optional[list[str]],
+    submitter_search: Optional[str],
+    sort_by: str,
+    sort_dir: str,
     limit: int,
     offset: int,
 ) -> Page[SubmissionRead]:
@@ -31,11 +34,14 @@ def list_submissions(
         form_id=form_id,
         mine_only=mine_only,
         status_in=status_in,
+        submitter_search=submitter_search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
     return Page(
-        items=[SubmissionRead.model_validate(i) for i in items],
+        items=[service.serialize_read(i, principal=principal) for i in items],
         total=total,
         limit=limit,
         offset=offset,
@@ -48,7 +54,7 @@ def get_submission(
     submission = service.get_submission(
         db, submission_id=submission_id, principal=principal
     )
-    return SubmissionRead.model_validate(submission)
+    return service.serialize_read(submission, principal=principal)
 
 
 def get_submission_detail(
@@ -66,7 +72,7 @@ def start_submission(
     submission = service.start_submission(
         db, form_id=payload.form_id, principal=principal
     )
-    return SubmissionRead.model_validate(submission)
+    return service.serialize_read(submission, principal=principal)
 
 
 def save_draft(
@@ -81,7 +87,7 @@ def save_draft(
         answers=payload.answers,
         principal=principal,
     )
-    return SubmissionRead.model_validate(submission)
+    return service.serialize_read(submission, principal=principal)
 
 
 def submit_submission(
@@ -96,7 +102,7 @@ def submit_submission(
         answers=payload.answers,
         principal=principal,
     )
-    return SubmissionRead.model_validate(submission)
+    return service.serialize_read(submission, principal=principal)
 
 
 def reveal_submission(
@@ -105,7 +111,7 @@ def reveal_submission(
     submission = service.reveal_submission(
         db, submission_id=submission_id, principal=principal
     )
-    return SubmissionRead.model_validate(submission)
+    return service.serialize_read(submission, principal=principal)
 
 
 def delete_submission(

@@ -76,12 +76,15 @@ def _validate_required(form: Form, answers: dict[str, Any]) -> None:
 
 def _score(form: Form, answers: dict[str, Any]) -> float:
     if not form.sections:
-        total = 0.0
-        for field in form.fields:
-            if field.type not in AUTO_GRADABLE:
-                continue
-            total += field.score_weight * _correctness_fraction(field, answers.get(str(field.id)))
-        return total
+        total_possible = sum(f.score_weight for f in form.fields if f.type in AUTO_GRADABLE)
+        if not total_possible:
+            return 0.0
+        earned = sum(
+            f.score_weight * _correctness_fraction(f, answers.get(str(f.id)))
+            for f in form.fields
+            if f.type in AUTO_GRADABLE
+        )
+        return (earned / total_possible) * 100
 
     # Section-weighted scoring — returns 0–100
     total_sw = sum(s["score_weight"] for s in form.sections)
@@ -330,6 +333,9 @@ def list_submissions(
     form_id: Optional[int],
     mine_only: bool,
     status_in: Optional[list[str]],
+    submitter_search: Optional[str],
+    sort_by: str,
+    sort_dir: str,
     limit: int,
     offset: int,
 ) -> tuple[list[Submission], int]:
@@ -360,6 +366,9 @@ def list_submissions(
         user_id=user_id,
         organisation_id=organisation_id,
         status_in=status_in,
+        submitter_search=submitter_search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
@@ -370,8 +379,46 @@ def list_submissions(
         user_id=user_id,
         organisation_id=organisation_id,
         status_in=status_in,
+        submitter_search=submitter_search,
     )
     return items, total
+
+
+def _submitter_name(submission: Submission) -> Optional[str]:
+    if submission.employee is not None:
+        return submission.employee.username
+    if submission.customer is not None:
+        return f"{submission.customer.first_name} {submission.customer.last_name}"
+    return None
+
+
+def serialize_read(submission: Submission, *, principal: Principal) -> SubmissionRead:
+    """Return a SubmissionRead with score nulled out when results are not yet revealed."""
+    form = submission.form
+
+    is_owner = (
+        (principal.principal == "employee" and submission.user_id == principal.id)
+        or (principal.principal == "customer" and submission.customer_id == principal.id)
+    )
+
+    is_reviewer = False
+    if isinstance(principal, EmployeePrincipal) and form is not None:
+        if form.organisation_id == principal.organisation_id:
+            is_reviewer = (
+                form.created_by == principal.id
+                or "submissions:view" in (principal.permissions or [])
+            )
+
+    revealed = bool(
+        is_reviewer
+        or (is_owner and (submission.results_revealed or (form and form.results_revealed)))
+    )
+
+    read = SubmissionRead.model_validate(submission)
+    read.submitter_name = _submitter_name(submission)
+    if not revealed:
+        read.score = None
+    return read
 
 
 def reveal_submission(
@@ -438,6 +485,8 @@ def serialize_detail(
     answers = submission.answers if (is_owner or is_reviewer) and revealed else None
 
     base = SubmissionRead.model_validate(submission)
+    if not revealed:
+        base.score = None
     return SubmissionDetail(
         **base.model_dump(),
         answers=answers,

@@ -33,9 +33,10 @@ def _parse_status_in(status_in: Optional[str]) -> Optional[list[str]]:
 def list_submissions(
     form_id: Optional[int] = Query(default=None),
     mine_only: bool = Query(default=False),
-    status_in: Optional[str] = Query(
-        default=None, description="Comma-separated statuses to filter by"
-    ),
+    status_in: Optional[str] = Query(default=None, description="Comma-separated statuses"),
+    submitter_search: Optional[str] = Query(default=None),
+    sort_by: str = Query(default="started_at"),
+    sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -47,6 +48,9 @@ def list_submissions(
         form_id=form_id,
         mine_only=mine_only,
         status_in=_parse_status_in(status_in),
+        submitter_search=submitter_search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
@@ -56,6 +60,8 @@ def list_submissions(
 def list_my_submissions(
     form_id: Optional[int] = Query(default=None),
     status_in: Optional[str] = Query(default=None),
+    sort_by: str = Query(default="started_at"),
+    sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -67,6 +73,9 @@ def list_my_submissions(
         form_id=form_id,
         mine_only=True,
         status_in=_parse_status_in(status_in),
+        submitter_search=None,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )

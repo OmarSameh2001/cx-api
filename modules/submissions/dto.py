@@ -32,6 +32,7 @@ class SubmissionRead(BaseModel):
     score: Optional[float]
     customer_id: Optional[int]
     user_id: Optional[int]
+    submitter_name: Optional[str] = None
 
 
 class SubmissionDetailField(BaseModel):
