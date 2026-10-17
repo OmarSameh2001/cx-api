@@ -49,6 +49,9 @@ class SubmissionDetailField(BaseModel):
     options: Optional[list[str]] = None
     right_answer: Optional[str] = None
     help_text: Optional[str] = None
+    # on a section the respondent's branching path skipped (finalized
+    # submissions only): the question was never shown, not left unanswered
+    skipped: bool = False
 
 
 class SubmissionDetail(SubmissionRead):

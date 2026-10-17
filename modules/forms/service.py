@@ -1,11 +1,13 @@
+import copy
 import secrets
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from common.errors import CodedHTTPException
 from modules.auth.dto import EmployeePrincipal
 
 from . import repository
@@ -37,6 +39,123 @@ def _ensure_creator_can_edit(form: Form, employee_id: int) -> None:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Form must be inactive to be modified"
         )
+
+
+def ordered_sections(sections: list[dict]) -> list[dict]:
+    """Canonical section order, shared by branching validation and the
+    submission path walk so both agree on what "forward" means."""
+    return sorted(sections, key=lambda s: (s.get("order", 0), s["id"]))
+
+
+def branch_key(field_type: str, value: Any) -> str:
+    """Normalise an answer (or a branching key) so they compare the same way
+    _correctness_fraction compares answers."""
+    key = str(value).strip()
+    return key.lower() if field_type == "boolean" else key
+
+
+_STRUCTURAL_FIELD_ATTRS = ("type", "options", "right_answer", "score_weight", "section_id", "branching")
+_STRUCTURAL_SECTION_KEYS = ("order", "score_weight", "next_section_id")
+
+
+def _ensure_known_field_ids(form: Form, payload: FormUpdate) -> None:
+    if payload.fields is None:
+        return
+    ids = [f.id for f in payload.fields if f.id is not None]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Duplicate field ids")
+    own_ids = {f.id for f in form.fields}
+    foreign = [i for i in ids if i not in own_ids]
+    if foreign:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Field ids do not belong to this form: {foreign}",
+        )
+
+
+def _structure_changed(form: Form, payload: FormUpdate) -> bool:
+    """True if the update changes anything that would invalidate existing
+    submissions. Wording, help text, field order and is_required are safe."""
+    if payload.type is not None and payload.type != form.type:
+        return True
+
+    if payload.fields is not None:
+        existing = {f.id: f for f in form.fields}
+        sent_ids = [f.id for f in payload.fields]
+        if None in sent_ids or set(sent_ids) != set(existing):
+            return True
+        for f in payload.fields:
+            obj = existing[f.id]
+            for attr in _STRUCTURAL_FIELD_ATTRS:
+                if getattr(f, attr) != getattr(obj, attr):
+                    return True
+
+    if "sections" in payload.model_fields_set:
+        current = {s["id"]: s for s in (form.sections or [])}
+        sent = payload.sections or []
+        if {s.id for s in sent} != set(current):
+            return True
+        defaults = {"order": 0, "score_weight": 1.0, "next_section_id": None}
+        for s in sent:
+            old = current[s.id]
+            for key in _STRUCTURAL_SECTION_KEYS:
+                if getattr(s, key) != old.get(key, defaults[key]):
+                    return True
+    return False
+
+
+def _validate_branching(
+    form_type: str, sections: Optional[list[dict]], fields: list[dict]
+) -> None:
+    """Branching rules must target a later section (or "end"), so a path can
+    never loop. Only questionnaires with sections can branch."""
+    sections = sections or []
+    has_rules = any(f.get("branching") for f in fields) or any(
+        s.get("next_section_id") is not None for s in sections
+    )
+    if not has_rules:
+        return
+
+    def fail(msg: str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, msg)
+
+    if form_type == "exam":
+        fail("Branching is only supported on questionnaires")
+    if not sections:
+        fail("Branching requires the form to have sections")
+
+    position = {s["id"]: i for i, s in enumerate(ordered_sections(sections))}
+    if len(position) != len(sections):
+        fail("Duplicate section ids")
+
+    def check_target(source_id: int, target) -> None:
+        if target == "end":
+            return
+        if target not in position:
+            fail(f"Branching targets unknown section {target}")
+        if position[target] <= position[source_id]:
+            fail(f"Section {source_id} can only jump forward, not to section {target}")
+
+    branching_sections: set[int] = set()
+    for f in fields:
+        if not f.get("branching"):
+            continue
+        sid = f.get("section_id")
+        if sid not in position:
+            fail("Branching questions must belong to a section")
+        if sid in branching_sections:
+            fail(f"Section {sid} can only have one branching question")
+        branching_sections.add(sid)
+        for target in f["branching"].values():
+            check_target(sid, target)
+
+    for s in sections:
+        if s.get("next_section_id") is not None:
+            check_target(s["id"], s["next_section_id"])
+
+
+def has_submissions(db: Session, form: Form) -> bool:
+    return repository.form_has_submissions(db, form.id)
 
 
 def _ensure_same_org(form: Form, organisation_id: int) -> None:
@@ -97,6 +216,52 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
     if _should_have_public_token(payload):
         data["public_token"] = _new_public_token()
     fields = [f.model_dump() for f in payload.fields]
+    _validate_branching(payload.type, data.get("sections"), fields)
+    return repository.create_form(db, data=data, fields=fields, created_by=employee.id)
+
+
+_COPIED_FORM_ATTRS = (
+    "source_type",
+    "type",
+    "description",
+    "submitter_type",
+    "assigned_to_units",
+    "time_limit_minutes",
+    "max_attempts",
+    "sections",
+)
+_COPIED_FIELD_ATTRS = (
+    "question",
+    "type",
+    "options",
+    "right_answer",
+    "order",
+    "help_text",
+    "is_required",
+    "score_weight",
+    "section_id",
+    "branching",
+)
+
+
+def duplicate_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> Form:
+    """A fresh copy with no responses: the way to change the structure of a
+    form its responses have locked."""
+    form = get_form(db, form_id, organisation_id=employee.organisation_id)
+    if form.created_by != employee.id and "forms:manage" not in (employee.permissions or []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to duplicate this form")
+
+    data = {key: copy.deepcopy(getattr(form, key)) for key in _COPIED_FORM_ATTRS}
+    data["name"] = f"{form.name[:248]} (copy)"
+    data["organisation_id"] = employee.organisation_id
+    # inactive so it can be edited before anyone responds
+    data["is_active"] = False
+    if _should_have_public_token(data):
+        data["public_token"] = _new_public_token()
+    fields = [
+        {key: copy.deepcopy(getattr(f, key)) for key in _COPIED_FIELD_ATTRS}
+        for f in form.fields
+    ]
     return repository.create_form(db, data=data, fields=fields, created_by=employee.id)
 
 
@@ -134,10 +299,28 @@ def update_form(
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     _ensure_creator_can_edit(form, employee.id)
+    _ensure_known_field_ids(form, payload)
+    if _structure_changed(form, payload) and repository.form_has_submissions(db, form.id):
+        raise CodedHTTPException(
+            status.HTTP_409_CONFLICT,
+            "Form has submissions; only wording can be changed "
+            "(send each existing field with its id)",
+            code="form_has_submissions",
+        )
 
     data = payload.model_dump(exclude_unset=True, exclude={"fields"})
+    if payload.sections is not None:
+        # exclude_unset is recursive; store sections with their defaults filled in
+        data["sections"] = [s.model_dump() for s in payload.sections]
     fields = (
         [f.model_dump() for f in payload.fields] if payload.fields is not None else None
+    )
+    _validate_branching(
+        data.get("type") or form.type,
+        data["sections"] if "sections" in data else form.sections,
+        fields
+        if fields is not None
+        else [{"section_id": f.section_id, "branching": f.branching} for f in form.fields],
     )
     return repository.update_form(db, form, data=data, fields=fields)
 

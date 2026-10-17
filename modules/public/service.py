@@ -5,12 +5,18 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from common.errors import CodedHTTPException
 from modules.customers.model import Customer
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form
 from modules.submissions import repository as submissions_repository
 from modules.submissions.model import Submission
-from modules.submissions.service import _score, _validate_required
+from modules.submissions.service import (
+    _prune_to_path,
+    _score,
+    _validate_required,
+    _visited_section_ids,
+)
 
 from .dto import PublicCustomer, PublicSubmitRequest
 
@@ -52,24 +58,23 @@ def _find_customer_by_email(db: Session, email: str) -> Optional[Customer]:
 
 
 def _match_or_reject(existing: Customer, provided: PublicCustomer) -> None:
-    if _normalize_text(existing.first_name) != _normalize_text(provided.first_name):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "A customer with this email already exists with a different first name",
-        )
-    if _normalize_text(existing.last_name) != _normalize_text(provided.last_name):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "A customer with this email already exists with a different last name",
-        )
+    mismatch = _normalize_text(existing.first_name) != _normalize_text(
+        provided.first_name
+    ) or _normalize_text(existing.last_name) != _normalize_text(provided.last_name)
     if provided.phone:
         existing_phone = _normalize_phone(existing.phone)
-        provided_phone = _normalize_phone(provided.phone)
-        if existing_phone and existing_phone != provided_phone:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                "A customer with this email already exists with a different phone",
-            )
+        if existing_phone and existing_phone != _normalize_phone(provided.phone):
+            mismatch = True
+    if mismatch:
+        # One message for any mismatch, so a prober can't learn which of the
+        # name or phone they guessed right. Coded so the form can send the
+        # respondent back to their details.
+        raise CodedHTTPException(
+            status.HTTP_409_CONFLICT,
+            "These details don't match the ones used with this email before. "
+            "Please use the same name and phone as last time.",
+            code="customer_details_mismatch",
+        )
 
 
 def _resolve_customer(
@@ -112,14 +117,16 @@ def submit_public(
             f"You have already submitted this form the maximum allowed times ({form.max_attempts})",
         )
 
-    _validate_required(form, payload.answers)
-    score = _score(form, payload.answers)
+    visited = _visited_section_ids(form, payload.answers)
+    answers = _prune_to_path(form, payload.answers, visited)
+    _validate_required(form, answers, visited)
+    score = _score(form, answers, visited)
 
     submission = Submission(
         form_id=form.id,
         customer_id=customer.id,
         user_id=None,
-        answers=payload.answers,
+        answers=answers,
         status="submitted",
         attempt_number=used + 1,
         submitted_at=datetime.now(timezone.utc),

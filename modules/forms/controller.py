@@ -13,6 +13,7 @@ from .dto import (
     FormSummary,
     FormUpdate,
 )
+from .model import Form
 
 
 def list_forms(
@@ -48,16 +49,26 @@ def list_forms(
     )
 
 
+def _read(db: Session, form: Form) -> FormRead:
+    # lets the editor know up front whether the structure is locked
+    return FormRead.model_validate(form).model_copy(
+        update={"has_submissions": service.has_submissions(db, form)}
+    )
+
+
 def get_form(db: Session, form_id: int, principal: Principal) -> FormRead:
     org_id = getattr(principal, "organisation_id", None)
-    return FormRead.model_validate(
-        service.get_form(db, form_id, organisation_id=org_id)
-    )
+    return _read(db, service.get_form(db, form_id, organisation_id=org_id))
 
 
 def create_form(db: Session, payload: FormCreate, employee: EmployeePrincipal) -> FormRead:
     form = service.create_form(db, payload=payload, employee=employee)
-    return FormRead.model_validate(form)
+    return _read(db, form)
+
+
+def duplicate_form(db: Session, form_id: int, employee: EmployeePrincipal) -> FormRead:
+    form = service.duplicate_form(db, form_id=form_id, employee=employee)
+    return _read(db, form)
 
 
 def update_form(
@@ -66,7 +77,7 @@ def update_form(
     form = service.update_form(
         db, form_id=form_id, payload=payload, employee=employee
     )
-    return FormRead.model_validate(form)
+    return _read(db, form)
 
 
 def delete_form(db: Session, form_id: int, employee: EmployeePrincipal) -> None:
@@ -77,28 +88,28 @@ def toggle_active(
     db: Session, form_id: int, active: bool, employee: EmployeePrincipal
 ) -> FormRead:
     form = service.toggle_active(db, form_id=form_id, active=active, employee=employee)
-    return FormRead.model_validate(form)
+    return _read(db, form)
 
 
 def reveal_form_results(
     db: Session, form_id: int, employee: EmployeePrincipal
 ) -> FormRead:
     form = service.reveal_form_results(db, form_id=form_id, employee=employee)
-    return FormRead.model_validate(form)
+    return _read(db, form)
 
 
 def rotate_public_token(
     db: Session, form_id: int, employee: EmployeePrincipal
 ) -> FormRead:
     form = service.rotate_public_token(db, form_id=form_id, employee=employee)
-    return FormRead.model_validate(form)
+    return _read(db, form)
 
 
 def revoke_public_token(
     db: Session, form_id: int, employee: EmployeePrincipal
 ) -> FormRead:
     form = service.revoke_public_token(db, form_id=form_id, employee=employee)
-    return FormRead.model_validate(form)
+    return _read(db, form)
 
 
 def list_assigned_to_me(

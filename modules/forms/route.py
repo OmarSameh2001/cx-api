@@ -97,6 +97,17 @@ def update_form(
     return controller.update_form(db, form_id, payload, employee)
 
 
+@router.post(
+    "/{form_id}/duplicate", response_model=FormRead, status_code=status.HTTP_201_CREATED
+)
+def duplicate_form(
+    form_id: int,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.duplicate_form(db, form_id, employee)
+
+
 @router.post("/{form_id}/activate", response_model=FormRead)
 def activate_form(
     form_id: int,

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -19,6 +19,10 @@ SubmitterType = Literal["employee", "customer"]
 FormType = Literal["questionnaire", "exam"]
 
 AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean"}
+BRANCHABLE_TYPES = {"single_choice", "boolean"}
+
+# A jump target: a section id, or "end" to finish the form.
+SectionTarget = Union[int, Literal["end"]]
 
 
 class FormSectionPayload(BaseModel):
@@ -27,6 +31,9 @@ class FormSectionPayload(BaseModel):
     description: Optional[str] = None
     order: int = 0
     score_weight: float = Field(default=1.0, gt=0)
+    # where to go after this section when no branching answer applies;
+    # None means the next section by order
+    next_section_id: Optional[SectionTarget] = None
 
 
 class FormFieldBase(BaseModel):
@@ -39,6 +46,37 @@ class FormFieldBase(BaseModel):
     is_required: bool = False
     score_weight: float = 0.0
     section_id: Optional[int] = None
+    # answer -> section to jump to; only for single_choice / boolean
+    branching: Optional[dict[str, SectionTarget]] = None
+
+
+class FormFieldCreate(FormFieldBase):
+    # on update: existing field id to edit in place; omit for a new field
+    id: Optional[int] = None
+
+    # The rules below run on writes only. FormFieldRead serves what is stored,
+    # so a row that predates a rule (or was fixed by hand) can't break reads.
+
+    @field_validator("branching")
+    @classmethod
+    def _validate_branching(cls, v, info):
+        if not v:
+            return None
+        type_ = info.data.get("type")
+        if type_ not in BRANCHABLE_TYPES:
+            raise ValueError("branching is only allowed on single_choice and boolean fields")
+        if type_ == "boolean":
+            v = {k.strip().lower(): t for k, t in v.items()}
+            allowed = {"true", "false"}
+        elif "options" not in info.data:
+            # options already failed validation; that error is the useful one
+            return v
+        else:
+            allowed = set(info.data.get("options") or [])
+        bad = [k for k in v if k not in allowed]
+        if bad:
+            raise ValueError(f"branching keys must be valid answers, got: {bad}")
+        return v
 
     @field_validator("options")
     @classmethod
@@ -53,10 +91,12 @@ class FormFieldBase(BaseModel):
     @classmethod
     def _validate_right_answer(cls, v, info):
         type_ = info.data.get("type")
-        if type_ == "text":
-            return None
         if v is None:
             return v
+        if type_ == "text":
+            # the reference answer free text is scored against (BM25 +
+            # semantic similarity); blank means the question isn't graded
+            return v.strip() or None
         options = info.data.get("options") or []
         if type_ == "single_choice":
             if v not in options:
@@ -71,10 +111,6 @@ class FormFieldBase(BaseModel):
             if v.strip().lower() not in {"true", "false"}:
                 raise ValueError("right_answer for boolean must be 'true' or 'false'")
         return v
-
-
-class FormFieldCreate(FormFieldBase):
-    pass
 
 
 class FormFieldRead(FormFieldBase):
@@ -123,7 +159,11 @@ class FormCreate(FormBase):
             if any(f.section_id is not None for f in self.fields):
                 raise ValueError("section_id on fields requires sections to be defined")
         if self.type == "exam":
-            if not any(f.type in AUTO_GRADABLE_TYPES for f in self.fields):
+            # a text question counts once it has a reference answer to score against
+            if not any(
+                f.type in AUTO_GRADABLE_TYPES or (f.type == "text" and f.right_answer)
+                for f in self.fields
+            ):
                 raise ValueError("exam forms must contain at least one auto-gradable field")
             if self.max_attempts is None:
                 self.max_attempts = 1
@@ -170,6 +210,9 @@ class FormRead(FormBase):
     created_by: Optional[int]
     fields: list[FormFieldRead] = []
     sections: Optional[list[dict]] = None
+    # a response has been submitted (drafts don't count): structure is
+    # locked, only wording can be changed. Filled in by the controller.
+    has_submissions: bool = False
 
 
 class FormSummary(BaseModel):

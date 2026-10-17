@@ -2,6 +2,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from modules.forms.dto import SectionTarget
+
 
 class PublicCustomer(BaseModel):
     email: EmailStr
@@ -26,6 +28,7 @@ class PublicFormField(BaseModel):
     help_text: Optional[str] = None
     is_required: bool
     section_id: Optional[int] = None
+    branching: Optional[dict[str, SectionTarget]] = None
 
 
 class PublicForm(BaseModel):

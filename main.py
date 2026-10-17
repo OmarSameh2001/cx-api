@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
+from common.errors import CodedHTTPException, coded_http_exception_handler
 from common.middleware import AuthenticationMiddleware
 from db import engine
 from modules.assignments.route import router as assignments_router
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="cx-api", lifespan=lifespan)
+app.add_exception_handler(CodedHTTPException, coded_http_exception_handler)
 
 app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/"])
 app.add_middleware(

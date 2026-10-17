@@ -68,5 +68,6 @@ class FormField(Base):
 
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)
     section_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    branching: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     form: Mapped["Form"] = relationship(back_populates="fields")

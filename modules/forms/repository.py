@@ -166,6 +166,7 @@ def count_forms_assigned(
 def create_form(db: Session, *, data: dict, fields: list[dict], created_by: int) -> Form:
     form = Form(**data, created_by=created_by)
     for f in fields:
+        f.pop("id", None)
         form.fields.append(FormField(**f))
     db.add(form)
     db.commit()
@@ -185,16 +186,44 @@ def update_form(db: Session, form: Form, *, data: dict, fields: Optional[list[di
         for key, value in data.items():
             setattr(form, key, value)
         if fields is not None:
-            form.fields.clear()
-            db.flush()
+            # diff by id so existing fields (and answers keyed by their id) survive
+            existing = {f.id: f for f in form.fields}
+            kept: set[int] = set()
             for f in fields:
-                form.fields.append(FormField(**f))
+                field_id = f.pop("id", None)
+                if field_id is not None and field_id in existing:
+                    obj = existing[field_id]
+                    for key, value in f.items():
+                        setattr(obj, key, value)
+                    kept.add(field_id)
+                else:
+                    form.fields.append(FormField(**f))
+            for field_id, obj in existing.items():
+                if field_id not in kept:
+                    form.fields.remove(obj)
         db.commit()
     except Exception:
         db.rollback()
         raise
     db.refresh(form)
     return form
+
+
+def form_has_submissions(db: Session, form_id: int) -> bool:
+    """True once a response has been submitted. Drafts don't count: opening a
+    form shouldn't freeze it, and a draft is checked against the current
+    structure when it is submitted."""
+    from modules.submissions.model import Submission
+
+    stmt = (
+        select(Submission.id)
+        .where(
+            Submission.form_id == form_id,
+            Submission.status.in_(("submitted", "late")),
+        )
+        .limit(1)
+    )
+    return db.execute(stmt).first() is not None
 
 
 def delete_form(db: Session, form: Form) -> None:
