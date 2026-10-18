@@ -13,7 +13,7 @@ from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
 from modules.forms.route import router as forms_router
 from modules.organisations.route import router as organisations_router
-from modules.public.route import router as public_router
+from modules.public_api.route import router as public_router
 from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
