@@ -36,6 +36,9 @@ def _clear_refresh_cookie(response: Response) -> None:
         key=AuthEnv.REFRESH_COOKIE_NAME,
         path=AuthEnv.REFRESH_COOKIE_PATH,
         domain=AuthEnv.COOKIE_DOMAIN,
+        secure=AuthEnv.COOKIE_SECURE,
+        httponly=True,
+        samesite=AuthEnv.COOKIE_SAMESITE,
     )
 
 
@@ -57,6 +60,9 @@ def _clear_access_cookie(response: Response) -> None:
         key=AuthEnv.ACCESS_COOKIE_NAME,
         path=AuthEnv.ACCESS_COOKIE_PATH,
         domain=AuthEnv.COOKIE_DOMAIN,
+        secure=AuthEnv.COOKIE_SECURE,
+        httponly=True,
+        samesite=AuthEnv.COOKIE_SAMESITE,
     )
 
 
