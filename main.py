@@ -39,7 +39,7 @@ app.add_exception_handler(CodedHTTPException, coded_http_exception_handler)
 app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://cx-front-azure.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
