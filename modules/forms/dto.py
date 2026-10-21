@@ -20,6 +20,8 @@ FormType = Literal["questionnaire", "exam"]
 
 AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean"}
 BRANCHABLE_TYPES = {"single_choice", "boolean"}
+# form_fields.options is ARRAY(String(255))
+MAX_OPTION_LENGTH = 255
 
 # A jump target: a section id, or "end" to finish the form.
 SectionTarget = Union[int, Literal["end"]]
@@ -85,6 +87,11 @@ class FormFieldCreate(FormFieldBase):
         if type_ in ("single_choice", "multi_choice"):
             if not v or len(v) < 2:
                 raise ValueError(f"{type_} fields require at least 2 options")
+        too_long = [o for o in v or [] if len(o) > MAX_OPTION_LENGTH]
+        if too_long:
+            raise ValueError(
+                f"options must be at most {MAX_OPTION_LENGTH} characters, got one of {len(too_long[0])}"
+            )
         return v
 
     @field_validator("right_answer")

@@ -24,6 +24,7 @@ from modules.mentions.route import router as mentions_router
 from modules.platform_configs.route import router as platform_configs_router
 from modules.notification_rules.route import router as notification_rules_router
 from modules.notification_deliveries.route import router as notification_deliveries_router
+from modules.ai.route import router as ai_router
 
 
 @asynccontextmanager
@@ -61,6 +62,7 @@ app.include_router(mentions_router)
 app.include_router(platform_configs_router)
 app.include_router(notification_rules_router)
 app.include_router(notification_deliveries_router)
+app.include_router(ai_router)
 
 
 @app.get("/")

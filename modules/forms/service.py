@@ -104,10 +104,13 @@ def _structure_changed(form: Form, payload: FormUpdate) -> bool:
     return False
 
 
-def _validate_branching(
+def validate_branching(
     form_type: str, sections: Optional[list[dict]], fields: list[dict]
 ) -> None:
-    """Branching rules must target a later section (or "end"), so a path can
+    """Public because the AI form generator runs it too, so a draft it returns
+    is one create_form accepts.
+
+    Branching rules must target a later section (or "end"), so a path can
     never loop. Only questionnaires with sections can branch."""
     sections = sections or []
     has_rules = any(f.get("branching") for f in fields) or any(
@@ -216,7 +219,7 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
     if _should_have_public_token(payload):
         data["public_token"] = _new_public_token()
     fields = [f.model_dump() for f in payload.fields]
-    _validate_branching(payload.type, data.get("sections"), fields)
+    validate_branching(payload.type, data.get("sections"), fields)
     return repository.create_form(db, data=data, fields=fields, created_by=employee.id)
 
 
@@ -315,7 +318,7 @@ def update_form(
     fields = (
         [f.model_dump() for f in payload.fields] if payload.fields is not None else None
     )
-    _validate_branching(
+    validate_branching(
         data.get("type") or form.type,
         data["sections"] if "sections" in data else form.sections,
         fields
