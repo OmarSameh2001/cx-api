@@ -94,7 +94,10 @@ class ProviderChain:
                 if not _is_request_error(e):
                     _mark_down(p.label)
                 failures.append(f"{p.label}: {type(e).__name__}")
-                logger.warning("AI provider {} failed, trying the next: {}", p.label, e)
+                # timeouts often have no message, so the type is the useful part
+                logger.warning(
+                    "AI provider {} failed, trying the next: {}: {}", p.label, type(e).__name__, e
+                )
         raise NoProviderAvailable("; ".join(failures) or "no AI provider is configured")
 
 
