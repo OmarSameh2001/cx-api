@@ -1,6 +1,7 @@
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from .model import Form, FormField
@@ -226,6 +227,23 @@ def form_has_submissions(db: Session, form_id: int) -> bool:
     return db.execute(stmt).first() is not None
 
 
-def delete_form(db: Session, form: Form) -> None:
-    db.delete(form)
-    db.commit()
+def delete_form(db: Session, form: Form) -> bool:
+    """Deletes the form with its unfinished submissions (drafts, expired).
+    False, with nothing deleted, if a response still references it."""
+    from modules.submissions.model import Submission
+
+    try:
+        db.execute(
+            delete(Submission)
+            .where(
+                Submission.form_id == form.id,
+                Submission.status.in_(("in_progress", "expired")),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.delete(form)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True

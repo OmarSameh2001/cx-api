@@ -7,6 +7,7 @@ from modules.auth.dto import Principal
 
 from . import service
 from .dto import (
+    RespondentForm,
     SubmissionDetail,
     SubmissionDraftUpdate,
     SubmissionFinalize,
@@ -64,6 +65,15 @@ def get_submission_detail(
         db, submission_id=submission_id, principal=principal
     )
     return service.serialize_detail(submission, principal=principal)
+
+
+def get_respondent_form(
+    db: Session, submission_id: int, principal: Principal
+) -> RespondentForm:
+    form = service.get_respondent_form(
+        db, submission_id=submission_id, principal=principal
+    )
+    return RespondentForm.model_validate(form)
 
 
 def start_submission(

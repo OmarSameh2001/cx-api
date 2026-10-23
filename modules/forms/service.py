@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from common.errors import CodedHTTPException
 from modules.auth.dto import EmployeePrincipal
 
-from . import repository
+from . import access, repository
 from .dto import FormCreate, FormUpdate
 from .model import Form
 
@@ -166,6 +166,15 @@ def _ensure_same_org(form: Form, organisation_id: int) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
 
 
+def get_form_for_employee(db: Session, form_id: int, employee: EmployeePrincipal) -> Form:
+    """The form as the editor and reviewers read it. Respondents get theirs
+    through their in-progress submission instead (without the answers)."""
+    form = get_form(db, form_id, organisation_id=employee.organisation_id)
+    if not access.can_read_form(employee, form):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to view this form")
+    return form
+
+
 def get_form(db: Session, form_id: int, *, organisation_id: Optional[int] = None) -> Form:
     form = repository.get_form(db, form_id)
     if form is None:
@@ -178,7 +187,7 @@ def get_form(db: Session, form_id: int, *, organisation_id: Optional[int] = None
 def list_forms(
     db: Session,
     *,
-    organisation_id: int,
+    employee: EmployeePrincipal,
     is_active: Optional[bool],
     is_archived: Optional[bool],
     submitter_type: Optional[str],
@@ -188,6 +197,14 @@ def list_forms(
     limit: int,
     offset: int,
 ) -> tuple[list[Form], int]:
+    organisation_id = employee.organisation_id
+    if not access.can_read_all_forms(employee):
+        # Without a form permission the only forms you can open are your own,
+        # so those are all that's listed; asking for someone else's is empty.
+        # Forms to answer come from /forms/assigned-to-me instead.
+        if created_by not in (None, employee.id):
+            return [], 0
+        created_by = employee.id
     items = repository.list_forms(
         db,
         organisation_id=organisation_id,
@@ -251,7 +268,7 @@ def duplicate_form(db: Session, *, form_id: int, employee: EmployeePrincipal) ->
     """A fresh copy with no responses: the way to change the structure of a
     form its responses have locked."""
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
-    if form.created_by != employee.id and "forms:manage" not in (employee.permissions or []):
+    if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to duplicate this form")
 
     data = {key: copy.deepcopy(getattr(form, key)) for key in _COPIED_FORM_ATTRS}
@@ -272,10 +289,7 @@ def rotate_public_token(
     db: Session, *, form_id: int, employee: EmployeePrincipal
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
-    if not (
-        form.created_by == employee.id
-        or "forms:manage" in (employee.permissions or [])
-    ):
+    if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this form")
     if form.type != "questionnaire" or "customer" not in (form.submitter_type or []):
         raise HTTPException(
@@ -289,10 +303,7 @@ def revoke_public_token(
     db: Session, *, form_id: int, employee: EmployeePrincipal
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
-    if not (
-        form.created_by == employee.id
-        or "forms:manage" in (employee.permissions or [])
-    ):
+    if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this form")
     return repository.set_public_token(db, form, None)
 
@@ -331,14 +342,24 @@ def update_form(
 def delete_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> None:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     _ensure_creator_can_edit(form, employee.id)
-    repository.delete_form(db, form)
+    responses = CodedHTTPException(
+        status.HTTP_409_CONFLICT,
+        "This form has responses, so it can't be deleted. Archive it instead.",
+        code="form_has_submissions",
+    )
+    if repository.form_has_submissions(db, form.id):
+        raise responses
+    # drafts go with the form; a response submitted since the check above
+    # still blocks the delete at the foreign key
+    if not repository.delete_form(db, form):
+        raise responses
 
 
 def toggle_active(
     db: Session, *, form_id: int, active: bool, employee: EmployeePrincipal
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
-    if form.created_by != employee.id and "forms:manage" not in (employee.permissions or []):
+    if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to modify this form")
     form.is_active = active
     db.commit()
@@ -350,7 +371,7 @@ def reveal_form_results(
     db: Session, *, form_id: int, employee: EmployeePrincipal
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
-    if form.created_by != employee.id and "submissions:view" not in (employee.permissions or []):
+    if not access.can_review(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to reveal results")
     form.results_revealed = True
     db.commit()

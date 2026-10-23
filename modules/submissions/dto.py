@@ -3,6 +3,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from modules.forms.dto import SectionTarget
+
 
 SubmissionStatusT = Literal["in_progress", "submitted", "late", "expired"]
 
@@ -57,3 +59,40 @@ class SubmissionDetailField(BaseModel):
 class SubmissionDetail(SubmissionRead):
     answers: Optional[dict[str, Any]] = None
     fields: list[SubmissionDetailField] = []
+
+
+class RespondentField(BaseModel):
+    """A question as the respondent sees it: no correct answer, no grading."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    question: str
+    type: str
+    options: Optional[list[str]] = None
+    order: int
+    help_text: Optional[str] = None
+    is_required: bool
+    section_id: Optional[int] = None
+    branching: Optional[dict[str, SectionTarget]] = None
+
+
+class RespondentSection(BaseModel):
+    # only what paging needs; score weights stay with the reviewers
+    id: int
+    title: str
+    description: Optional[str] = None
+    order: int = 0
+    next_section_id: Optional[SectionTarget] = None
+
+
+class RespondentForm(BaseModel):
+    """The form a respondent is filling in, served through their own
+    in-progress submission so questions can't be read before starting."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    description: Optional[str] = None
+    type: str
+    time_limit_minutes: Optional[int] = None
+    max_attempts: Optional[int] = None
+    fields: list[RespondentField] = []
+    sections: Optional[list[RespondentSection]] = None

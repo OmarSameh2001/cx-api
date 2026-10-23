@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from common.dto import Page
 from db import get_db
-from modules.auth.dto import EmployeePrincipal, Principal
-from modules.auth.route import current_employee, current_principal
+from modules.auth.dto import EmployeePrincipal
+from modules.auth.route import current_employee
 
 from . import controller
 from .dto import (
@@ -73,9 +73,10 @@ def list_assigned_to_me(
 def get_form(
     form_id: int,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(current_principal),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_form(db, form_id, principal)
+    # employees only: customers have no organisation to scope the read to
+    return controller.get_form(db, form_id, employee)
 
 
 @router.post("", response_model=FormRead, status_code=status.HTTP_201_CREATED)

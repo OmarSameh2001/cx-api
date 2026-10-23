@@ -10,6 +10,7 @@ from modules.auth.route import current_principal
 
 from . import controller
 from .dto import (
+    RespondentForm,
     SubmissionDetail,
     SubmissionDraftUpdate,
     SubmissionFinalize,
@@ -128,6 +129,15 @@ def get_submission_detail(
     principal: Principal = Depends(current_principal),
 ):
     return controller.get_submission_detail(db, submission_id, principal)
+
+
+@router.get("/{submission_id}/form", response_model=RespondentForm)
+def get_respondent_form(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(current_principal),
+):
+    return controller.get_respondent_form(db, submission_id, principal)
 
 
 @router.get("/{submission_id}", response_model=SubmissionRead)

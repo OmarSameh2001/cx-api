@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
 from common.errors import CodedHTTPException, coded_http_exception_handler
-from common.middleware import AuthenticationMiddleware
+from common.middleware import AuthenticationMiddleware, BodySizeLimitMiddleware
 from db import engine
 from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
@@ -38,6 +38,13 @@ app = FastAPI(title="cx-api", lifespan=lifespan)
 app.add_exception_handler(CodedHTTPException, coded_http_exception_handler)
 
 app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/"])
+# answers are small; cap what respondents can send (inside CORS so a 413 still
+# carries CORS headers the browser can read)
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    max_bytes=256 * 1024,
+    path_prefixes=["/public/", "/submissions"],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "https://cx-front-azure.vercel.app"],

@@ -42,6 +42,6 @@ class PublicForm(BaseModel):
 
 
 class PublicSubmitResponse(BaseModel):
+    # nothing about the customer record: whether an email was already known
+    # must not be readable from the response
     submission_id: int
-    customer_id: int
-    created_customer: bool

@@ -3,9 +3,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from common.dto import Page
-from modules.auth.dto import EmployeePrincipal, Principal
+from modules.auth.dto import EmployeePrincipal
 
-from . import service
+from . import access, service
 from .dto import (
     AssignedFormSummary,
     FormCreate,
@@ -31,7 +31,7 @@ def list_forms(
 ) -> Page[FormSummary]:
     items, total = service.list_forms(
         db,
-        organisation_id=employee.organisation_id,
+        employee=employee,
         is_active=is_active,
         is_archived=is_archived,
         submitter_type=submitter_type,
@@ -56,9 +56,17 @@ def _read(db: Session, form: Form) -> FormRead:
     )
 
 
-def get_form(db: Session, form_id: int, principal: Principal) -> FormRead:
-    org_id = getattr(principal, "organisation_id", None)
-    return _read(db, service.get_form(db, form_id, organisation_id=org_id))
+def get_form(db: Session, form_id: int, employee: EmployeePrincipal) -> FormRead:
+    form = service.get_form_for_employee(db, form_id, employee)
+    read = _read(db, form)
+    if access.can_see_answers(employee, form):
+        return read
+    # a forms:read viewer sees the questions, never the correct answers
+    return read.model_copy(
+        update={
+            "fields": [f.model_copy(update={"right_answer": None}) for f in read.fields]
+        }
+    )
 
 
 def create_form(db: Session, payload: FormCreate, employee: EmployeePrincipal) -> FormRead:

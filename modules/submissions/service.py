@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 
 from common.services.text_scoring.scorer import score_text
 from modules.auth.dto import EmployeePrincipal, Principal
+from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form, FormField
 from modules.forms.service import branch_key, ordered_sections
 
 from . import repository
+from .answer_rules import validate_answer_values
 from .dto import (
     SubmissionDetail,
     SubmissionDetailField,
@@ -250,11 +252,9 @@ def _ensure_can_view(submission: Submission, principal: Principal) -> None:
         # owners always can
         if submission.user_id == principal.id:
             return
-        # same org + has submissions:view permission
+        # same org + reviewer of the form
         if submission.form is not None and submission.form.organisation_id == principal.organisation_id:
-            if "submissions:view" in (principal.permissions or []):
-                return
-            if submission.form.created_by == principal.id:
+            if form_access.can_review(principal, submission.form):
                 return
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Not allowed to view this submission"
@@ -282,6 +282,22 @@ def _check_and_apply_expiry(
         repository.save(db, submission)
         return True
     return False
+
+
+def get_respondent_form(
+    db: Session, *, submission_id: int, principal: Principal
+) -> Form:
+    """The form behind the caller's own in-progress submission. Tying the
+    questions to a started attempt means they can't be read before the timer
+    runs, and the respondent view never carries the correct answers."""
+    submission = repository.get_submission(db, submission_id)
+    if submission is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+    _ensure_owner(submission, principal)
+    if _check_and_apply_expiry(db, submission):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Submission has expired")
+    _ensure_in_progress(submission)
+    return submission.form
 
 
 def _ensure_attempt_quota(
@@ -354,9 +370,13 @@ def save_draft(
             status.HTTP_409_CONFLICT, "Submission has expired; draft cannot be saved"
         )
     _ensure_in_progress(submission)
-    # merge answers (partial allowed; no validation)
+    # merge answers (partial allowed); only the form's own questions are kept,
+    # with values bounded by type and size
+    known = {str(f.id) for f in submission.form.fields}
+    incoming = {k: v for k, v in (answers or {}).items() if k in known}
+    validate_answer_values(submission.form, incoming, draft=True)
     merged = dict(submission.answers or {})
-    merged.update(answers or {})
+    merged.update(incoming)
     submission.answers = merged
     return repository.save(db, submission)
 
@@ -388,6 +408,7 @@ def submit_submission(
     visited = _visited_section_ids(form, answers)
     final_answers = _prune_to_path(form, answers, visited)
     submission.answers = final_answers
+    validate_answer_values(form, final_answers)
     _validate_required(form, final_answers, visited)
 
     now = _now()
@@ -427,7 +448,7 @@ def list_submissions(
     organisation_id: Optional[int] = None
 
     if isinstance(principal, EmployeePrincipal):
-        can_view_all = "submissions:view" in (principal.permissions or [])
+        can_view_all = form_access.can_review_all(principal)
         organisation_id = principal.organisation_id
         if mine_only:
             user_id = principal.id
@@ -487,10 +508,7 @@ def serialize_read(submission: Submission, *, principal: Principal) -> Submissio
     is_reviewer = False
     if isinstance(principal, EmployeePrincipal) and form is not None:
         if form.organisation_id == principal.organisation_id:
-            is_reviewer = (
-                form.created_by == principal.id
-                or "submissions:view" in (principal.permissions or [])
-            )
+            is_reviewer = form_access.can_review(principal, form)
 
     revealed = bool(
         is_reviewer
@@ -515,9 +533,7 @@ def reveal_submission(
     form = submission.form
     if form is None or form.organisation_id != principal.organisation_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
-    is_creator = form.created_by == principal.id
-    has_perm = "submissions:view" in (principal.permissions or [])
-    if not (is_creator or has_perm):
+    if not form_access.can_review(principal, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to reveal this submission")
     submission.results_revealed = True
     return repository.save(db, submission)
@@ -538,10 +554,7 @@ def serialize_detail(
     is_reviewer = False
     if isinstance(principal, EmployeePrincipal) and form is not None:
         if form.organisation_id == principal.organisation_id:
-            is_reviewer = (
-                form.created_by == principal.id
-                or "submissions:view" in (principal.permissions or [])
-            )
+            is_reviewer = form_access.can_review(principal, form)
 
     revealed = bool(
         is_reviewer
