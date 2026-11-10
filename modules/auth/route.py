@@ -9,8 +9,6 @@ from db import get_db
 
 from . import controller, service
 from .dto import (
-    CustomerLoginResponse,
-    CustomerPrincipal,
     EmployeeLoginResponse,
     EmployeePrincipal,
     LoginRequest,
@@ -56,20 +54,14 @@ def current_principal(token: str = Depends(_access_token)) -> Principal:
     principal_type = payload.get("principal")
     if principal_type == "employee":
         return EmployeePrincipal(**payload)
-    if principal_type == "customer":
-        return CustomerPrincipal(**payload)
+    # Customers no longer log in (they answer by public link); any customer
+    # token still in circulation is refused like an unknown one.
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown principal type")
 
 
 def current_employee(p: Principal = Depends(current_principal)) -> EmployeePrincipal:
     if not isinstance(p, EmployeePrincipal):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Employee access required")
-    return p
-
-
-def current_customer(p: Principal = Depends(current_principal)) -> CustomerPrincipal:
-    if not isinstance(p, CustomerPrincipal):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Customer access required")
     return p
 
 
@@ -94,17 +86,6 @@ def employee_login(
     user_agent: Optional[str] = Header(default=None, alias="User-Agent"),
 ):
     return controller.employee_login(db, payload, response, user_agent, _client_ip(request))
-
-
-@router.post("/customer/login", response_model=CustomerLoginResponse)
-def customer_login(
-    payload: LoginRequest,
-    response: Response,
-    request: Request,
-    db: Session = Depends(get_db),
-    user_agent: Optional[str] = Header(default=None, alias="User-Agent"),
-):
-    return controller.customer_login(db, payload, response, user_agent, _client_ip(request))
 
 
 @router.post("/refresh", response_model=TokenResponse)

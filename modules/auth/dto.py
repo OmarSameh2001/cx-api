@@ -32,19 +32,8 @@ class EmployeeInfo(BaseModel):
     permissions: list[str] = []
 
 
-class CustomerInfo(BaseModel):
-    id: int
-    first_name: str
-    last_name: str
-    email: EmailStr
-
-
 class EmployeeLoginResponse(BaseModel):
     user: EmployeeInfo
-
-
-class CustomerLoginResponse(BaseModel):
-    user: CustomerInfo
 
 
 class LogoutResponse(BaseModel):

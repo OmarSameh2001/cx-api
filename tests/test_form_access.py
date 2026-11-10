@@ -69,8 +69,9 @@ def test_other_organisation_gets_404(client, form):
 
 
 def test_customer_token_cannot_read_any_form(client, form):
+    # customers no longer log in: a leftover customer token is refused outright
     res = client.get("/forms/7", headers=customer_token())
-    assert res.status_code == 403
+    assert res.status_code == 401
     assert "right_answer" not in res.text
 
 

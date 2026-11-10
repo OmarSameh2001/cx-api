@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db import Base
 
 if TYPE_CHECKING:
+    from ..customers.model import Customer
     from ..employees.model import Employee
     from ..roles.model import Role
     from ..subscriptions.model import SubscriptionPlan
@@ -40,4 +41,8 @@ class Organisation(Base):
     # whose FK to roles has no ON DELETE.
     roles: Mapped[List["Role"]] = relationship(
         back_populates="organisation", cascade="all, delete-orphan"
+    )
+    # the database cascades (ON DELETE CASCADE), the ORM must not null the FK
+    customers: Mapped[List["Customer"]] = relationship(
+        back_populates="organisation", passive_deletes=True
     )

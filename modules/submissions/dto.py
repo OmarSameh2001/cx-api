@@ -56,7 +56,16 @@ class SubmissionDetailField(BaseModel):
     skipped: bool = False
 
 
+class SubmissionContact(BaseModel):
+    email: str
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+
+
 class SubmissionDetail(SubmissionRead):
+    # public submissions: the contact details as given with this submission
+    contact: Optional[SubmissionContact] = None
     answers: Optional[dict[str, Any]] = None
     fields: list[SubmissionDetailField] = []
 

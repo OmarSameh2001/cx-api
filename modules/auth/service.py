@@ -123,14 +123,6 @@ def _build_employee_claims(db: Session, employee) -> dict:
     }
 
 
-def _build_customer_claims(customer) -> dict:
-    return {
-        "principal": "customer",
-        "id": customer.id,
-        "sub": f"customer:{customer.id}",
-    }
-
-
 def _issue_tokens(
     db: Session,
     *,
@@ -168,27 +160,6 @@ def login_employee(
     return employee, claims, access, refresh, expires_in
 
 
-def login_customer(
-    db: Session, *, email: str, password: str, user_agent: Optional[str], ip: Optional[str]
-):
-    customer = repository.get_customer_by_email(db, email)
-    if customer is None or not customer.is_auth or not customer.password:
-        raise AuthError("Invalid email or password")
-    if not verify_password(password, customer.password):
-        raise AuthError("Invalid email or password")
-
-    claims = _build_customer_claims(customer)
-    access, refresh, expires_in = _issue_tokens(
-        db,
-        principal_type="customer",
-        principal_id=customer.id,
-        base_claims=claims,
-        user_agent=user_agent,
-        ip=ip,
-    )
-    return customer, claims, access, refresh, expires_in
-
-
 def refresh_session(
     db: Session,
     *,
@@ -215,11 +186,6 @@ def refresh_session(
         if employee is None or not employee.is_active:
             raise AuthError("Account no longer available")
         base_claims = _build_employee_claims(db, employee)
-    elif principal_type == "customer":
-        customer = repository.get_customer_by_id(db, principal_id)
-        if customer is None or not customer.is_auth:
-            raise AuthError("Account no longer available")
-        base_claims = _build_customer_claims(customer)
     else:
         raise AuthError("Unknown principal type")
 

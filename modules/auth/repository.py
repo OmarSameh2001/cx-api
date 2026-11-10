@@ -4,7 +4,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from config import AuthEnv
-from modules.customers.model import Customer
 from modules.employees.model import Employee
 from modules.roles.model import Permission, Role, RolePermission
 
@@ -15,14 +14,6 @@ def get_employee_by_email(db: Session, email: str) -> Optional[Employee]:
 
 def get_employee_by_id(db: Session, employee_id: int) -> Optional[Employee]:
     return db.get(Employee, employee_id)
-
-
-def get_customer_by_email(db: Session, email: str) -> Optional[Customer]:
-    return db.execute(select(Customer).where(Customer.email == email)).scalar_one_or_none()
-
-
-def get_customer_by_id(db: Session, customer_id: int) -> Optional[Customer]:
-    return db.get(Customer, customer_id)
 
 
 def get_role_with_permissions(db: Session, role_id: int) -> Optional[Role]:
@@ -46,8 +37,6 @@ def list_permission_names_for_role(db: Session, role_id: int) -> list[str]:
 def _principal(db: Session, principal_type: str, principal_id: int):
     if principal_type == "employee":
         return db.get(Employee, principal_id)
-    if principal_type == "customer":
-        return db.get(Customer, principal_id)
     return None
 
 

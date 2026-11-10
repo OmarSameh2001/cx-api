@@ -7,8 +7,6 @@ from config import AuthEnv
 
 from . import service
 from .dto import (
-    CustomerInfo,
-    CustomerLoginResponse,
     EmployeeInfo,
     EmployeeLoginResponse,
     LoginRequest,
@@ -93,27 +91,6 @@ def employee_login(
         permissions=claims.get("permissions", []),
     )
     return EmployeeLoginResponse(user=user)
-
-
-def customer_login(
-    db: Session,
-    payload: LoginRequest,
-    response: Response,
-    user_agent: Optional[str],
-    ip: Optional[str],
-) -> CustomerLoginResponse:
-    customer, _, access, refresh, expires_in = service.login_customer(
-        db, email=payload.email, password=payload.password, user_agent=user_agent, ip=ip
-    )
-    _set_refresh_cookie(response, refresh)
-    _set_access_cookie(response, access)
-    user = CustomerInfo(
-        id=customer.id,
-        first_name=customer.first_name,
-        last_name=customer.last_name,
-        email=customer.email,
-    )
-    return CustomerLoginResponse(user=user)
 
 
 def refresh(

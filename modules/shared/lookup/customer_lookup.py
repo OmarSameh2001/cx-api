@@ -1,10 +1,9 @@
 from typing import Optional
 
 from pydantic import BaseModel
-from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from modules.customers.model import Customer
+from modules.customers import repository as customers_repository
 
 
 class CustomerLookup(BaseModel):
@@ -16,19 +15,13 @@ class CustomerLookup(BaseModel):
 def search_customers(
     db: Session,
     *,
+    organisation_id: int,
     search: Optional[str] = None,
     limit: int = 20,
 ) -> list[CustomerLookup]:
-    stmt = select(Customer)
-    if search:
-        pattern = f"%{search}%"
-        stmt = stmt.where(
-            or_(
-                Customer.first_name.ilike(pattern),
-                Customer.last_name.ilike(pattern),
-            )
-        )
-    rows = db.execute(stmt.limit(limit)).scalars().all()
+    rows = customers_repository.search(
+        db, organisation_id=organisation_id, search=search, limit=limit
+    )
     return [
         CustomerLookup(
             id=r.id,

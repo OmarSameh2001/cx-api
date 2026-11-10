@@ -491,6 +491,10 @@ def list_submissions(
 def _submitter_name(submission: Submission) -> Optional[str]:
     if submission.employee is not None:
         return submission.employee.username
+    # public submissions: the name given this time, then the customer record
+    contact = submission.contact or {}
+    if contact.get("first_name") or contact.get("last_name"):
+        return f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
     if submission.customer is not None:
         return f"{submission.customer.first_name} {submission.customer.last_name}"
     return None
@@ -590,10 +594,13 @@ def serialize_detail(
     answers = submission.answers if (is_owner or is_reviewer) and revealed else None
 
     base = SubmissionRead.model_validate(submission)
+    base.submitter_name = _submitter_name(submission)
     if not revealed:
         base.score = None
     return SubmissionDetail(
         **base.model_dump(),
+        # personal details: for the form's reviewers only
+        contact=submission.contact if is_reviewer else None,
         answers=answers,
         fields=fields,
     )

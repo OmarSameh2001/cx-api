@@ -16,7 +16,6 @@ DEFAULT_PUBLIC_PATHS: tuple[str, ...] = (
     "/openapi.json",
     "/docs/oauth2-redirect",
     "/auth/employee/login",
-    "/auth/customer/login",
     "/auth/refresh",
     "/auth/logout",
 )

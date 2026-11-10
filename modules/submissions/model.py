@@ -47,6 +47,11 @@ class Submission(Base):
 
     score: Mapped[Optional[float]] = mapped_column(Float)
 
+    # Public submissions: the contact details exactly as given this time
+    # ({email, first_name, last_name, phone}). The customer record keeps the
+    # details from first contact and is never overwritten by a submission.
+    contact: Mapped[Optional[dict]] = mapped_column(JSON)
+
     customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), index=True)
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"), index=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)

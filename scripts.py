@@ -245,18 +245,20 @@ def db_seed():
             platform_admin=True,
         )
 
+        # Customers don't log in; they answer Acme's forms by public link.
         customer = db.execute(
-            select(Customer).where(Customer.email == "customer@acme.com")
+            select(Customer).where(
+                Customer.organisation_id == org.id, Customer.email == "customer@acme.com"
+            )
         ).scalar_one_or_none()
         if customer is None:
             db.add(
                 Customer(
+                    organisation_id=org.id,
                     first_name="Carl",
                     last_name="Customer",
                     email="customer@acme.com",
                     phone="+10000000000",
-                    is_auth=True,
-                    password=hash_password("Password123!"),
                 )
             )
 
@@ -269,7 +271,7 @@ def db_seed():
         click.echo("    agent@acme.com    (agent)")
         click.echo("    sales@acme.com    (agent)")
         click.echo("    platform@acme.com (admin + platform admin)")
-        click.echo("  Customer:")
+        click.echo("  Customer (no login; answers by public link):")
         click.echo("    customer@acme.com")
     except Exception:
         db.rollback()

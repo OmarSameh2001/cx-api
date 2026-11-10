@@ -32,9 +32,9 @@ def customers_lookup(
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: EmployeePrincipal = Depends(current_employee),
+    emp: EmployeePrincipal = Depends(current_employee),
 ):
-    return search_customers(db, search=search, limit=limit)
+    return search_customers(db, organisation_id=emp.organisation_id, search=search, limit=limit)
 
 
 @router.get("/units", response_model=list[UnitLookup])

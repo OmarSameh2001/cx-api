@@ -52,4 +52,5 @@ def test_plain_employee_asking_for_someone_elses_forms_gets_nothing(client, list
 def test_customers_cannot_list_forms(client, listing):
     from tests.conftest import customer_token
 
-    assert client.get("/forms", headers=customer_token()).status_code == 403
+    # customers no longer log in: a leftover customer token is refused outright
+    assert client.get("/forms", headers=customer_token()).status_code == 401
