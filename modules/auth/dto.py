@@ -26,6 +26,7 @@ class EmployeeInfo(BaseModel):
     role_id: Optional[int] = None
     role: Optional[str] = None
     is_admin: bool = False
+    is_platform_admin: bool = False
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []
     permissions: list[str] = []
@@ -61,7 +62,10 @@ class EmployeePrincipal(BasePrincipal):
     organisation_id: int
     role_id: Optional[int] = None
     role: Optional[str] = None
+    # Organisation admin: holds the organisation's system role.
     is_admin: bool = False
+    # Platform admin: Employee.is_platform_admin, never granted by a role.
+    is_platform_admin: bool = False
     permissions: list[str] = []
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []

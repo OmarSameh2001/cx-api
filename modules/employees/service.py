@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from modules.auth.service import hash_password
+from modules.roles.service import ensure_role_in_organisation
 
 from . import repository
 from .dto import EmployeeCreate, EmployeeUpdate
@@ -62,6 +63,8 @@ def create_employee(
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already in use")
     if payload.external_id and repository.get_employee_by_external_id(db, payload.external_id) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
+    if payload.role_id is not None:
+        ensure_role_in_organisation(db, payload.role_id, organisation_id)
 
     employee = repository.create_employee(
         db,
@@ -112,6 +115,8 @@ def update_employee(
             raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
     if "unit_id" in data and data["unit_id"] not in assigned_unit_ids:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Unit not in your assigned units")
+    if data.get("role_id") is not None:
+        ensure_role_in_organisation(db, data["role_id"], organisation_id)
     repository.update_employee(db, employee, data=data)
     db.commit()
     return repository.get_employee(db, employee_id)

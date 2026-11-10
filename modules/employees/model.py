@@ -24,6 +24,11 @@ class Employee(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Runs the platform (organisations, tenants, the permission catalogue).
+    # Deliberately not a role permission, so no organisation role can grant it.
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     email_code: Mapped[Optional[str]] = mapped_column(String(16))
     phone: Mapped[Optional[str]] = mapped_column(String(32))
     dob: Mapped[Optional[date]] = mapped_column("DOB", Date)

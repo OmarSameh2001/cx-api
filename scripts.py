@@ -13,8 +13,7 @@ from modules.auth.service import hash_password
 from modules.customers.model import Customer
 from modules.employees.model import Employee
 from modules.organisations.model import Organisation
-from modules.roles.model import Permission, Role, RolePermission
-from modules.roles.permissions import PermissionKey
+from modules.roles.service import seed_default_roles
 from modules.subscriptions.model import SubscriptionPlan
 from modules.units.model import Unit
 
@@ -170,65 +169,13 @@ def db_seed():
         upsert_unit("Backend Team", "team", engineering.id)
         upsert_unit("Frontend Team", "team", engineering.id)
 
-        permissions: dict[tuple[str, str], Permission] = {}
-        for resource, action in PermissionKey.all_pairs():
-            existing = db.execute(
-                select(Permission).where(
-                    Permission.resource == resource, Permission.action == action
-                )
-            ).scalar_one_or_none()
-            if existing is None:
-                existing = Permission(resource=resource, action=action)
-                db.add(existing)
-                db.flush()
-            permissions[(resource, action)] = existing
+        # Same default roles every new organisation gets (modules/roles/permissions.py).
+        roles = {r.name: r for r in seed_default_roles(db, organisation_id=org.id)}
+        admin_role, manager_role, agent_role = roles["admin"], roles["manager"], roles["agent"]
 
-        def upsert_role(name, is_system, perm_keys):
-            role = db.execute(
-                select(Role).where(Role.name == name)
-            ).scalar_one_or_none()
-            if role is None:
-                role = Role(name=name, is_system=is_system)
-                db.add(role)
-                db.flush()
-            existing_perm_ids = {rp.permission_id for rp in role.role_permissions}
-            for key in perm_keys:
-                perm = permissions[key]
-                if perm.id not in existing_perm_ids:
-                    db.add(RolePermission(role_id=role.id, permission_id=perm.id))
-            db.flush()
-            return role
-
-        admin_role = upsert_role("admin", True, list(permissions.keys()))
-        manager_role = upsert_role(
-            "manager",
-            False,
-            [
-                ("customers", "read"),
-                ("customers", "create"),
-                ("customers", "update"),
-                ("employees", "read"),
-                ("units", "read"),
-                ("forms", "read"),
-                ("forms", "create"),
-                ("forms", "update"),
-                ("submissions", "read"),
-                ("submissions", "create"),
-                ("submissions", "update"),
-            ],
-        )
-        agent_role = upsert_role(
-            "agent",
-            False,
-            [
-                ("customers", "read"),
-                ("forms", "read"),
-                ("submissions", "read"),
-                ("submissions", "create"),
-            ],
-        )
-
-        def upsert_employee(*, email, username, first, last, role, unit, manager_id=None):
+        def upsert_employee(
+            *, email, username, first, last, role, unit, manager_id=None, platform_admin=False
+        ):
             existing = db.execute(
                 select(Employee).where(Employee.email == email)
             ).scalar_one_or_none()
@@ -241,6 +188,7 @@ def db_seed():
                 email=email,
                 password=hash_password("Password123!"),
                 is_active=True,
+                is_platform_admin=platform_admin,
                 organisation_id=org.id,
                 unit_id=unit.id if unit else None,
                 role_id=role.id,
@@ -285,6 +233,17 @@ def db_seed():
             unit=sales,
             manager_id=admin.id,
         )
+        # Platform admin: runs organisations and tenants. Also Acme's org admin
+        # so the app has something to show them.
+        upsert_employee(
+            email="platform@acme.com",
+            username="platform",
+            first="Pat",
+            last="Platform",
+            role=admin_role,
+            unit=hq,
+            platform_admin=True,
+        )
 
         customer = db.execute(
             select(Customer).where(Customer.email == "customer@acme.com")
@@ -309,11 +268,35 @@ def db_seed():
         click.echo("    manager@acme.com  (manager)")
         click.echo("    agent@acme.com    (agent)")
         click.echo("    sales@acme.com    (agent)")
+        click.echo("    platform@acme.com (admin + platform admin)")
         click.echo("  Customer:")
         click.echo("    customer@acme.com")
     except Exception:
         db.rollback()
         raise
+    finally:
+        db.close()
+
+
+@cli.command("platform-admin")
+@click.argument("email")
+@click.option("--revoke", is_flag=True, help="Remove the flag instead of granting it.")
+def platform_admin(email: str, revoke: bool):
+    """Grant (or --revoke) platform admin to an employee by email.
+
+    Deliberately CLI-only: no API endpoint sets this flag. The employee must
+    log in again for the change to reach their token.
+    """
+    db = SessionLocal()
+    try:
+        employee = db.execute(
+            select(Employee).where(Employee.email == email)
+        ).scalar_one_or_none()
+        if employee is None:
+            raise click.ClickException(f"No employee with email {email}")
+        employee.is_platform_admin = not revoke
+        db.commit()
+        click.echo(f"{email}: is_platform_admin = {employee.is_platform_admin}")
     finally:
         db.close()
 

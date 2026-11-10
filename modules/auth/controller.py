@@ -86,6 +86,8 @@ def employee_login(
         email=employee.email,
         role_id=claims.get("role_id"),
         role=claims.get("role"),
+        is_admin=claims.get("is_admin", False),
+        is_platform_admin=claims.get("is_platform_admin", False),
         unit_id=claims.get("unit_id"),
         assigned_unit_ids=claims.get("assigned_unit_ids", []),
         permissions=claims.get("permissions", []),

@@ -88,7 +88,12 @@ def _fresh_rate_limits():
 
 
 def employee_token(
-    id=1, organisation_id=10, permissions=(), is_admin=False
+    id=1,
+    organisation_id=10,
+    permissions=(),
+    is_admin=False,
+    is_platform_admin=False,
+    assigned_unit_ids=(),
 ) -> dict[str, str]:
     token = _encode_access_token(
         {
@@ -98,9 +103,10 @@ def employee_token(
             "jti": uuid.uuid4().hex,
             "organisation_id": organisation_id,
             "is_admin": is_admin,
+            "is_platform_admin": is_platform_admin,
             "permissions": list(permissions),
             "unit_id": None,
-            "assigned_unit_ids": [],
+            "assigned_unit_ids": list(assigned_unit_ids),
         }
     )
     return {"Authorization": f"Bearer {token}"}

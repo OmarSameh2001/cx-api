@@ -27,8 +27,12 @@ def _to_role_read(role: Role) -> RoleRead:
     )
 
 
-def list_roles(db: Session, *, limit: int, offset: int) -> Page[RoleSummary]:
-    items, total = service.list_roles(db, limit=limit, offset=offset)
+def list_roles(
+    db: Session, *, organisation_id: int, limit: int, offset: int
+) -> Page[RoleSummary]:
+    items, total = service.list_roles(
+        db, organisation_id=organisation_id, limit=limit, offset=offset
+    )
     return Page(
         items=[RoleSummary.model_validate(r) for r in items],
         total=total,
@@ -37,30 +41,39 @@ def list_roles(db: Session, *, limit: int, offset: int) -> Page[RoleSummary]:
     )
 
 
-def get_role(db: Session, role_id: int) -> RoleRead:
-    return _to_role_read(service.get_role(db, role_id))
+def get_role(db: Session, role_id: int, organisation_id: int) -> RoleRead:
+    return _to_role_read(service.get_role(db, role_id, organisation_id))
 
 
-def create_role(db: Session, payload: RoleCreate, employee_id: int) -> RoleRead:
+def create_role(
+    db: Session, payload: RoleCreate, organisation_id: int, employee_id: int
+) -> RoleRead:
     return _to_role_read(
-        service.create_role(db, payload=payload, employee_id=employee_id)
+        service.create_role(
+            db, payload=payload, organisation_id=organisation_id, employee_id=employee_id
+        )
     )
 
 
-def update_role(db: Session, role_id: int, payload: RoleUpdate) -> RoleRead:
+def update_role(
+    db: Session, role_id: int, payload: RoleUpdate, organisation_id: int
+) -> RoleRead:
     return _to_role_read(
-        service.update_role(db, role_id=role_id, payload=payload)
+        service.update_role(
+            db, role_id=role_id, payload=payload, organisation_id=organisation_id
+        )
     )
 
 
-def delete_role(db: Session, role_id: int) -> None:
-    service.delete_role(db, role_id=role_id)
+def delete_role(db: Session, role_id: int, organisation_id: int) -> None:
+    service.delete_role(db, role_id=role_id, organisation_id=organisation_id)
 
 
 def replace_role_permissions(
     db: Session,
     role_id: int,
     payload: RolePermissionsReplace,
+    organisation_id: int,
     employee_id: int,
 ) -> RoleRead:
     return _to_role_read(
@@ -68,6 +81,7 @@ def replace_role_permissions(
             db,
             role_id=role_id,
             permission_ids=payload.permission_ids,
+            organisation_id=organisation_id,
             employee_id=employee_id,
         )
     )
@@ -77,6 +91,7 @@ def add_role_permissions(
     db: Session,
     role_id: int,
     payload: RolePermissionsAdd,
+    organisation_id: int,
     employee_id: int,
 ) -> RoleRead:
     return _to_role_read(
@@ -84,15 +99,18 @@ def add_role_permissions(
             db,
             role_id=role_id,
             permission_ids=payload.permission_ids,
+            organisation_id=organisation_id,
             employee_id=employee_id,
         )
     )
 
 
 def remove_role_permission(
-    db: Session, role_id: int, permission_id: int
+    db: Session, role_id: int, permission_id: int, organisation_id: int
 ) -> None:
-    service.remove_role_permission(db, role_id=role_id, permission_id=permission_id)
+    service.remove_role_permission(
+        db, role_id=role_id, permission_id=permission_id, organisation_id=organisation_id
+    )
 
 
 def list_permissions(db: Session) -> list[PermissionRead]:

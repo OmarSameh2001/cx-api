@@ -116,6 +116,7 @@ def _build_employee_claims(db: Session, employee) -> dict:
         "role_id": employee.role_id,
         "role": role_name,
         "is_admin": is_admin,
+        "is_platform_admin": bool(employee.is_platform_admin),
         "permissions": permissions,
         "unit_id": employee.unit_id,
         "assigned_unit_ids": assigned_unit_ids,

@@ -8,6 +8,7 @@ from db import Base
 
 if TYPE_CHECKING:
     from ..employees.model import Employee
+    from ..roles.model import Role
     from ..subscriptions.model import SubscriptionPlan
     from ..tenants.model import Tenant
     from ..units.model import Unit
@@ -35,3 +36,8 @@ class Organisation(Base):
     )
     units: Mapped[List["Unit"]] = relationship(back_populates="organisation")
     employees: Mapped[List["Employee"]] = relationship(back_populates="organisation")
+    # ORM cascade (not passive): it also removes each role's role_permissions,
+    # whose FK to roles has no ON DELETE.
+    roles: Mapped[List["Role"]] = relationship(
+        back_populates="organisation", cascade="all, delete-orphan"
+    )

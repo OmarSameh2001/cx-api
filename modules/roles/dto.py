@@ -22,7 +22,9 @@ class RoleBase(BaseModel):
 
 
 class RoleCreate(RoleBase):
-    is_system: bool = False
+    # No is_system here: a system role makes its holders organisation admins,
+    # so system roles only come from seed_default_roles. An is_system sent by
+    # an older client is ignored.
     permission_ids: list[int] = Field(default_factory=list)
 
 

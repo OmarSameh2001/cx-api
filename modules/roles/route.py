@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from common.decorator.permission import require_permission
+from common.decorator.platform_admin import platform_admin
 from common.dto import Page
 from db import get_db
 from modules.auth.dto import EmployeePrincipal
@@ -24,6 +25,10 @@ from .dto import (
 router = APIRouter(prefix="/roles", tags=["roles"])
 
 
+# ── Permission catalogue ─────────────────────────────────────────────────────
+# Shared by every organisation. Org admins read it to build their roles; only
+# platform admins change it.
+
 @router.get("/permissions", response_model=list[PermissionRead])
 @require_permission("roles:read")
 def list_permissions(db: Session = Depends(get_db)):
@@ -35,17 +40,19 @@ def list_permissions(db: Session = Depends(get_db)):
     response_model=PermissionRead,
     status_code=status.HTTP_201_CREATED,
 )
-@require_permission("roles:create")
 def create_permission(
     payload: PermissionCreate,
     db: Session = Depends(get_db),
+    _: EmployeePrincipal = Depends(platform_admin),
 ):
     return controller.create_permission(db, payload)
 
 
 @router.post("/permissions/seed", response_model=SeedResult)
-@require_permission("roles:create")
-def seed_permissions(db: Session = Depends(get_db)):
+def seed_permissions(
+    db: Session = Depends(get_db),
+    _: EmployeePrincipal = Depends(platform_admin),
+):
     return controller.seed_permissions(db)
 
 
@@ -53,14 +60,16 @@ def seed_permissions(db: Session = Depends(get_db)):
     "/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-@require_permission("roles:delete")
 def delete_permission(
     permission_id: int,
     db: Session = Depends(get_db),
+    _: EmployeePrincipal = Depends(platform_admin),
 ):
     controller.delete_permission(db, permission_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+
+# ── Roles, scoped to the caller's organisation ───────────────────────────────
 
 @router.get("", response_model=Page[RoleSummary])
 @require_permission("roles:read")
@@ -68,8 +77,11 @@ def list_roles(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_roles(db, limit=limit, offset=offset)
+    return controller.list_roles(
+        db, organisation_id=employee.organisation_id, limit=limit, offset=offset
+    )
 
 
 @router.post("", response_model=RoleRead, status_code=status.HTTP_201_CREATED)
@@ -79,7 +91,7 @@ def create_role(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_role(db, payload, employee.id)
+    return controller.create_role(db, payload, employee.organisation_id, employee.id)
 
 
 @router.get("/{role_id}", response_model=RoleRead)
@@ -87,8 +99,9 @@ def create_role(
 def get_role(
     role_id: int,
     db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_role(db, role_id)
+    return controller.get_role(db, role_id, employee.organisation_id)
 
 
 @router.patch("/{role_id}", response_model=RoleRead)
@@ -97,8 +110,9 @@ def update_role(
     role_id: int,
     payload: RoleUpdate,
     db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_role(db, role_id, payload)
+    return controller.update_role(db, role_id, payload, employee.organisation_id)
 
 
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -106,8 +120,9 @@ def update_role(
 def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_role(db, role_id)
+    controller.delete_role(db, role_id, employee.organisation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -119,7 +134,9 @@ def replace_role_permissions(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.replace_role_permissions(db, role_id, payload, employee.id)
+    return controller.replace_role_permissions(
+        db, role_id, payload, employee.organisation_id, employee.id
+    )
 
 
 @router.post("/{role_id}/permissions", response_model=RoleRead)
@@ -130,7 +147,9 @@ def add_role_permissions(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.add_role_permissions(db, role_id, payload, employee.id)
+    return controller.add_role_permissions(
+        db, role_id, payload, employee.organisation_id, employee.id
+    )
 
 
 @router.delete(
@@ -142,6 +161,9 @@ def remove_role_permission(
     role_id: int,
     permission_id: int,
     db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.remove_role_permission(db, role_id, permission_id)
+    controller.remove_role_permission(
+        db, role_id, permission_id, employee.organisation_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

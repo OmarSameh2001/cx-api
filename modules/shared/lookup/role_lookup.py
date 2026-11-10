@@ -15,10 +15,11 @@ class RoleLookup(BaseModel):
 def search_roles(
     db: Session,
     *,
+    organisation_id: int,
     search: Optional[str] = None,
     limit: int = 20,
 ) -> list[RoleLookup]:
-    stmt = select(Role)
+    stmt = select(Role).where(Role.organisation_id == organisation_id)
     if search:
         stmt = stmt.where(Role.name.ilike(f"%{search}%"))
     rows = db.execute(stmt.limit(limit)).scalars().all()

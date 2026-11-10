@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session, selectinload
 from .model import Permission, Role, RolePermission
 
 
-def get_role(db: Session, role_id: int) -> Optional[Role]:
+def get_role(db: Session, role_id: int, organisation_id: int) -> Optional[Role]:
     stmt = (
         select(Role)
-        .where(Role.id == role_id)
+        .where(Role.id == role_id, Role.organisation_id == organisation_id)
         .options(
             selectinload(Role.role_permissions).selectinload(RolePermission.permission)
         )
@@ -17,21 +17,31 @@ def get_role(db: Session, role_id: int) -> Optional[Role]:
     return db.execute(stmt).scalar_one_or_none()
 
 
-def get_role_by_name(db: Session, name: str) -> Optional[Role]:
-    return db.execute(select(Role).where(Role.name == name)).scalar_one_or_none()
+def get_role_by_name(db: Session, name: str, organisation_id: int) -> Optional[Role]:
+    stmt = select(Role).where(Role.name == name, Role.organisation_id == organisation_id)
+    return db.execute(stmt).scalar_one_or_none()
 
 
-def list_roles(db: Session, *, limit: int = 100, offset: int = 0) -> list[Role]:
-    stmt = select(Role).order_by(Role.name).limit(limit).offset(offset)
+def list_roles(
+    db: Session, *, organisation_id: int, limit: int = 100, offset: int = 0
+) -> list[Role]:
+    stmt = (
+        select(Role)
+        .where(Role.organisation_id == organisation_id)
+        .order_by(Role.name)
+        .limit(limit)
+        .offset(offset)
+    )
     return list(db.execute(stmt).scalars().all())
 
 
-def count_roles(db: Session) -> int:
-    return db.execute(select(func.count()).select_from(Role)).scalar_one()
+def count_roles(db: Session, *, organisation_id: int) -> int:
+    stmt = select(func.count()).select_from(Role).where(Role.organisation_id == organisation_id)
+    return db.execute(stmt).scalar_one()
 
 
-def create_role(db: Session, *, name: str, is_system: bool) -> Role:
-    role = Role(name=name, is_system=is_system)
+def create_role(db: Session, *, name: str, is_system: bool, organisation_id: int) -> Role:
+    role = Role(name=name, is_system=is_system, organisation_id=organisation_id)
     db.add(role)
     db.flush()
     return role

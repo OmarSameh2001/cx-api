@@ -1,20 +1,29 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
 
 if TYPE_CHECKING:
     from ..employees.model import Employee
+    from ..organisations.model import Organisation
 
 class Role(Base):
     __tablename__ = "roles"
+    __table_args__ = (
+        UniqueConstraint("organisation_id", "name", name="uq_roles_organisation_id_name"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    organisation_id: Mapped[int] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    organisation: Mapped["Organisation"] = relationship(back_populates="roles")
 
     role_permissions: Mapped[List["RolePermission"]] = relationship(
         back_populates="role", cascade="all, delete-orphan"

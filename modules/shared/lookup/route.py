@@ -68,6 +68,6 @@ def roles_lookup(
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: EmployeePrincipal = Depends(current_employee),
+    emp: EmployeePrincipal = Depends(current_employee),
 ):
-    return search_roles(db, search=search, limit=limit)
+    return search_roles(db, organisation_id=emp.organisation_id, search=search, limit=limit)
