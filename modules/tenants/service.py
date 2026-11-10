@@ -15,6 +15,19 @@ def _ensure_tenant(db: Session, tenant_id: uuid.UUID) -> Tenant:
     return tenant
 
 
+def tenant_in_organisation(db: Session, tenant_id: uuid.UUID, organisation_id: int) -> bool:
+    tenant = repository.get_tenant(db, tenant_id)
+    return tenant is not None and tenant.organisation_id == organisation_id
+
+
+def ensure_tenant_in_organisation(db: Session, tenant_id: uuid.UUID, organisation_id: int) -> None:
+    """For the tenant-scoped modules (keywords, mentions, notifications,
+    platform configs): a tenant id from the client must be the caller's own.
+    Another organisation's tenant is reported as missing."""
+    if not tenant_in_organisation(db, tenant_id, organisation_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
+
+
 def list_tenants(db: Session, *, limit: int, offset: int) -> tuple[list[Tenant], int]:
     items = repository.list_tenants(db, limit=limit, offset=offset)
     total = repository.count_tenants(db)

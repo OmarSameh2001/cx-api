@@ -24,7 +24,7 @@ def list_keywords(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_keywords(db, tenant_id=tenant_id, limit=limit, offset=offset)
+    return controller.list_keywords(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
 
 
 @router.post("", response_model=KeywordRead, status_code=status.HTTP_201_CREATED)
@@ -34,7 +34,7 @@ def create_keyword(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_keyword(db, payload)
+    return controller.create_keyword(db, payload, employee.organisation_id)
 
 
 @router.get("/{keyword_id}", response_model=KeywordRead)
@@ -44,7 +44,7 @@ def get_keyword(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_keyword(db, keyword_id)
+    return controller.get_keyword(db, keyword_id, employee.organisation_id)
 
 
 @router.patch("/{keyword_id}", response_model=KeywordRead)
@@ -55,7 +55,7 @@ def update_keyword(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_keyword(db, keyword_id, payload)
+    return controller.update_keyword(db, keyword_id, payload, employee.organisation_id)
 
 
 @router.delete("/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -65,5 +65,5 @@ def delete_keyword(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_keyword(db, keyword_id)
+    controller.delete_keyword(db, keyword_id, employee.organisation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

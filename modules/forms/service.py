@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from common.errors import CodedHTTPException
 from modules.auth.dto import EmployeePrincipal
+from modules.units import repository as units_repository
 
 from . import access, repository
 from .dto import FormCreate, FormUpdate
@@ -230,7 +231,16 @@ def list_forms(
     return items, total
 
 
+def _ensure_units_in_organisation(db: Session, unit_ids, organisation_id: int) -> None:
+    """A form can only be targeted at units of its own organisation."""
+    for unit_id in unit_ids or []:
+        unit = units_repository.get_unit(db, unit_id)
+        if unit is None or unit.organisation_id != organisation_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
+
+
 def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal) -> Form:
+    _ensure_units_in_organisation(db, payload.assigned_to_units, employee.organisation_id)
     data = payload.model_dump(exclude={"fields"})
     data["organisation_id"] = employee.organisation_id
     if _should_have_public_token(payload):
@@ -323,6 +333,8 @@ def update_form(
         )
 
     data = payload.model_dump(exclude_unset=True, exclude={"fields"})
+    if "assigned_to_units" in data:
+        _ensure_units_in_organisation(db, data["assigned_to_units"], employee.organisation_id)
     if payload.sections is not None:
         # exclude_unset is recursive; store sections with their defaults filled in
         data["sections"] = [s.model_dump() for s in payload.sections]

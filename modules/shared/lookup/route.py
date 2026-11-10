@@ -60,7 +60,13 @@ def forms_lookup(
     db: Session = Depends(get_db),
     emp: EmployeePrincipal = Depends(current_employee),
 ):
-    return search_forms(db, allowed_unit_ids=emp.assigned_unit_ids, search=search, limit=limit)
+    return search_forms(
+        db,
+        organisation_id=emp.organisation_id,
+        allowed_unit_ids=emp.assigned_unit_ids,
+        search=search,
+        limit=limit,
+    )
 
 
 @router.get("/roles", response_model=list[RoleLookup])

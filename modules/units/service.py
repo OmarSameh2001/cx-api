@@ -1,9 +1,25 @@
+from typing import Optional
+
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from modules.auth.dto import EmployeePrincipal
 
 from . import repository
 from .dto import UnitCreate, UnitUpdate
 from .model import Unit
+
+
+def resolve_organisation(viewer: EmployeePrincipal, requested: Optional[int]) -> int:
+    """The organisation a unit request acts on. The client may name one (the
+    Organisation page does), but only a platform admin may name another
+    organisation than their own; anyone else gets 404, as if it didn't exist."""
+    if requested is None or requested == viewer.organisation_id:
+        return viewer.organisation_id
+    if viewer.is_platform_admin:
+        return requested
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Organisation not found")
 
 
 def _ensure_unit(db: Session, unit_id: int, organisation_id: int) -> Unit:
@@ -23,14 +39,14 @@ def get_unit(db: Session, unit_id: int, organisation_id: int) -> Unit:
     return _ensure_unit(db, unit_id, organisation_id)
 
 
-def create_unit(db: Session, *, payload: UnitCreate) -> Unit:
+def create_unit(db: Session, *, payload: UnitCreate, organisation_id: int) -> Unit:
     if payload.external_id:
         existing = repository.get_unit_by_external_id(db, payload.external_id)
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
     if payload.parent_unit_id is not None:
         parent = repository.get_unit(db, payload.parent_unit_id)
-        if parent is None or parent.organisation_id != payload.organisation_id:
+        if parent is None or parent.organisation_id != organisation_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent unit not found in this organisation")
     unit = repository.create_unit(
         db,
@@ -38,7 +54,7 @@ def create_unit(db: Session, *, payload: UnitCreate) -> Unit:
         type=payload.type,
         contact_info=payload.contact_info,
         is_active=payload.is_active,
-        organisation_id=payload.organisation_id,
+        organisation_id=organisation_id,
         parent_unit_id=payload.parent_unit_id,
         external_id=payload.external_id,
     )
@@ -69,4 +85,12 @@ def update_unit(db: Session, unit_id: int, organisation_id: int, *, payload: Uni
 def delete_unit(db: Session, unit_id: int, organisation_id: int) -> None:
     unit = _ensure_unit(db, unit_id, organisation_id)
     repository.delete_unit(db, unit)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # employees, assignments or child units still point at it
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This unit is still in use (employees, assignments or sub-units); move them first",
+        )

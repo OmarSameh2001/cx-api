@@ -11,6 +11,7 @@ from .dto import AssignmentCreate, AssignmentRead, AssignmentUpdate
 def list_assignments(
     db: Session,
     *,
+    organisation_id: int,
     user_id: Optional[int],
     unit_id: Optional[int],
     assigned_by: Optional[int],
@@ -19,6 +20,7 @@ def list_assignments(
 ) -> Page[AssignmentRead]:
     items, total = service.list_assignments(
         db,
+        organisation_id=organisation_id,
         user_id=user_id,
         unit_id=unit_id,
         assigned_by=assigned_by,
@@ -33,27 +35,29 @@ def list_assignments(
     )
 
 
-def get_assignment(db: Session, assignment_id: int) -> AssignmentRead:
-    return AssignmentRead.model_validate(service.get_assignment(db, assignment_id))
+def get_assignment(db: Session, assignment_id: int, organisation_id: int) -> AssignmentRead:
+    return AssignmentRead.model_validate(
+        service.get_assignment(db, assignment_id, organisation_id)
+    )
 
 
 def create_assignment(
-    db: Session, payload: AssignmentCreate, employee_id: int
+    db: Session, payload: AssignmentCreate, organisation_id: int, employee_id: int
 ) -> AssignmentRead:
     assignment = service.create_assignment(
-        db, payload=payload, employee_id=employee_id
+        db, payload=payload, organisation_id=organisation_id, employee_id=employee_id
     )
     return AssignmentRead.model_validate(assignment)
 
 
 def update_assignment(
-    db: Session, assignment_id: int, payload: AssignmentUpdate
+    db: Session, assignment_id: int, payload: AssignmentUpdate, organisation_id: int
 ) -> AssignmentRead:
     assignment = service.update_assignment(
-        db, assignment_id=assignment_id, payload=payload
+        db, assignment_id=assignment_id, payload=payload, organisation_id=organisation_id
     )
     return AssignmentRead.model_validate(assignment)
 
 
-def delete_assignment(db: Session, assignment_id: int) -> None:
-    service.delete_assignment(db, assignment_id=assignment_id)
+def delete_assignment(db: Session, assignment_id: int, organisation_id: int) -> None:
+    service.delete_assignment(db, assignment_id=assignment_id, organisation_id=organisation_id)

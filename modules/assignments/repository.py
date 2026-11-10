@@ -3,6 +3,8 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from modules.units.model import Unit
+
 from .model import Assignment
 
 
@@ -10,16 +12,24 @@ def get_assignment(db: Session, assignment_id: int) -> Optional[Assignment]:
     return db.get(Assignment, assignment_id)
 
 
+def _in_organisation(stmt, organisation_id: int):
+    # an assignment's organisation is its unit's
+    return stmt.join(Unit, Assignment.unit_id == Unit.id).where(
+        Unit.organisation_id == organisation_id
+    )
+
+
 def list_assignments(
     db: Session,
     *,
+    organisation_id: int,
     user_id: Optional[int] = None,
     unit_id: Optional[int] = None,
     assigned_by: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Assignment]:
-    stmt = select(Assignment)
+    stmt = _in_organisation(select(Assignment), organisation_id)
     if user_id is not None:
         stmt = stmt.where(Assignment.user_id == user_id)
     if unit_id is not None:
@@ -33,11 +43,12 @@ def list_assignments(
 def count_assignments(
     db: Session,
     *,
+    organisation_id: int,
     user_id: Optional[int] = None,
     unit_id: Optional[int] = None,
     assigned_by: Optional[int] = None,
 ) -> int:
-    stmt = select(func.count()).select_from(Assignment)
+    stmt = _in_organisation(select(func.count()).select_from(Assignment), organisation_id)
     if user_id is not None:
         stmt = stmt.where(Assignment.user_id == user_id)
     if unit_id is not None:

@@ -8,23 +8,23 @@ from . import service
 from .dto import NotificationRuleCreate, NotificationRuleRead, NotificationRuleSummary, NotificationRuleUpdate
 
 
-def list_notification_rules(db: Session, *, tenant_id: uuid.UUID, limit: int, offset: int) -> Page[NotificationRuleSummary]:
-    items, total = service.list_notification_rules(db, tenant_id=tenant_id, limit=limit, offset=offset)
+def list_notification_rules(db: Session, *, tenant_id: uuid.UUID, organisation_id: int, limit: int, offset: int) -> Page[NotificationRuleSummary]:
+    items, total = service.list_notification_rules(db, tenant_id=tenant_id, organisation_id=organisation_id, limit=limit, offset=offset)
     summaries = [NotificationRuleSummary.model_validate(r) for r in items]
     return Page(items=summaries, total=total, limit=limit, offset=offset)
 
 
-def get_notification_rule(db: Session, rule_id: uuid.UUID) -> NotificationRuleRead:
-    return NotificationRuleRead.model_validate(service.get_notification_rule(db, rule_id))
+def get_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> NotificationRuleRead:
+    return NotificationRuleRead.model_validate(service.get_notification_rule(db, rule_id, organisation_id))
 
 
-def create_notification_rule(db: Session, payload: NotificationRuleCreate) -> NotificationRuleRead:
-    return NotificationRuleRead.model_validate(service.create_notification_rule(db, payload=payload))
+def create_notification_rule(db: Session, payload: NotificationRuleCreate, organisation_id: int) -> NotificationRuleRead:
+    return NotificationRuleRead.model_validate(service.create_notification_rule(db, payload=payload, organisation_id=organisation_id))
 
 
-def update_notification_rule(db: Session, rule_id: uuid.UUID, payload: NotificationRuleUpdate) -> NotificationRuleRead:
-    return NotificationRuleRead.model_validate(service.update_notification_rule(db, rule_id, payload=payload))
+def update_notification_rule(db: Session, rule_id: uuid.UUID, payload: NotificationRuleUpdate, organisation_id: int) -> NotificationRuleRead:
+    return NotificationRuleRead.model_validate(service.update_notification_rule(db, rule_id, organisation_id=organisation_id, payload=payload))
 
 
-def delete_notification_rule(db: Session, rule_id: uuid.UUID) -> None:
-    service.delete_notification_rule(db, rule_id)
+def delete_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> None:
+    service.delete_notification_rule(db, rule_id, organisation_id)

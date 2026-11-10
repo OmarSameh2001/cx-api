@@ -4,7 +4,7 @@ import click
 import uvicorn
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select, text
+from sqlalchemy import bindparam, select, text
 
 import models  # noqa: F401  registers all models on Base.metadata
 from db import Base
@@ -299,6 +299,95 @@ def platform_admin(email: str, revoke: bool):
         employee.is_platform_admin = not revoke
         db.commit()
         click.echo(f"{email}: is_platform_admin = {employee.is_platform_admin}")
+    finally:
+        db.close()
+
+
+# ── E2E isolation fixture (T0.6.1) ───────────────────────────────────────────
+# Two throwaway organisations, each with one org admin holding the full default
+# admin role. The isolation tests let B attack A's data, so nothing real is at
+# risk; --remove deletes both organisations and everything pointing at them.
+
+E2E_ISOLATION_ORGS = {"A": "E2E Isolation Org A", "B": "E2E Isolation Org B"}
+E2E_PASSWORD = "Password123!"
+
+
+def _e2e_isolation_remove(db) -> int:
+    ids = [
+        r[0]
+        for r in db.execute(
+            text("SELECT id FROM organisations WHERE name IN :n").bindparams(
+                bindparam("n", expanding=True)
+            ),
+            {"n": list(E2E_ISOLATION_ORGS.values())},
+        )
+    ]
+    if not ids:
+        return 0
+    p = {"o": ids}
+    exp = bindparam("o", expanding=True)
+
+    def run(sql: str) -> None:
+        db.execute(text(sql).bindparams(exp), p)
+
+    emp = "SELECT id FROM employees WHERE organisation_id IN :o"
+    forms = f"SELECT id FROM forms WHERE organisation_id IN :o OR created_by IN ({emp})"
+    units = "SELECT id FROM units WHERE organisation_id IN :o"
+    cust = "SELECT id FROM customers WHERE organisation_id IN :o"
+    # anything these orgs touched, including rows a leak let them create elsewhere
+    run(f"DELETE FROM submissions WHERE form_id IN ({forms}) OR user_id IN ({emp}) OR customer_id IN ({cust})")
+    run(f"DELETE FROM assignments WHERE user_id IN ({emp}) OR assigned_by IN ({emp}) OR unit_id IN ({units})")
+    run(f"DELETE FROM form_fields WHERE form_id IN ({forms})")
+    run(f"DELETE FROM forms WHERE id IN ({forms})")
+    run("DELETE FROM tenants WHERE organisation_id IN :o")  # children cascade
+    run(f"UPDATE role_permissions SET updated_by = NULL WHERE updated_by IN ({emp})")
+    run(f"UPDATE employees SET manager_id = NULL WHERE manager_id IN ({emp})")
+    run("DELETE FROM employees WHERE organisation_id IN :o")
+    run("DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE organisation_id IN :o)")
+    run("DELETE FROM roles WHERE organisation_id IN :o")
+    run("UPDATE units SET parent_unit_id = NULL WHERE organisation_id IN :o")
+    run("DELETE FROM units WHERE organisation_id IN :o")
+    run("DELETE FROM organisations WHERE id IN :o")  # customers cascade
+    return len(ids)
+
+
+@cli.command("e2e:isolation")
+@click.option("--remove", is_flag=True, help="Delete the two E2E organisations and their data.")
+def e2e_isolation(remove: bool):
+    """Create (or --remove) the two-organisation fixture for the isolation
+    tests. Prints JSON: {"A": {...}, "B": {...}} with org id, unit id, email."""
+    import json
+
+    db = SessionLocal()
+    try:
+        removed = _e2e_isolation_remove(db)
+        db.commit()
+        if remove:
+            click.echo(f"removed {removed} E2E isolation organisation(s)")
+            return
+        out = {}
+        for key, name in E2E_ISOLATION_ORGS.items():
+            org = Organisation(name=name, industry="E2E")
+            db.add(org)
+            db.flush()
+            roles = {r.name: r for r in seed_default_roles(db, organisation_id=org.id)}
+            unit = Unit(name=f"{key} HQ", type="company", organisation_id=org.id, is_active=True)
+            db.add(unit)
+            db.flush()
+            email = f"isolation-{key.lower()}@example.com"
+            employee = Employee(
+                first_name="Iso", last_name=key, username=f"e2e_isolation_{key.lower()}",
+                email=email, password=hash_password(E2E_PASSWORD), is_active=True,
+                organisation_id=org.id, unit_id=unit.id, role_id=roles["admin"].id,
+            )
+            db.add(employee)
+            db.flush()
+            out[key] = {"org_id": org.id, "unit_id": unit.id, "employee_id": employee.id, "email": email}
+        db.commit()
+        click.echo(json.dumps(out))
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

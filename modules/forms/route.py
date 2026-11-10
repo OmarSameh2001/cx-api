@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+from common.decorator.permission import require_permission
 from common.dto import Page
 from db import get_db
 from modules.auth.dto import EmployeePrincipal
@@ -80,6 +81,7 @@ def get_form(
 
 
 @router.post("", response_model=FormRead, status_code=status.HTTP_201_CREATED)
+@require_permission("forms:create")
 def create_form(
     payload: FormCreate,
     db: Session = Depends(get_db),

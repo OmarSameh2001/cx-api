@@ -15,11 +15,16 @@ class FormLookup(BaseModel):
 def search_forms(
     db: Session,
     *,
+    organisation_id: int,
     allowed_unit_ids: list[int],
     search: Optional[str] = None,
     limit: int = 20,
 ) -> list[FormLookup]:
-    stmt = select(Form).where(Form.is_active.is_(True), Form.is_archived.is_(False))
+    stmt = select(Form).where(
+        Form.organisation_id == organisation_id,
+        Form.is_active.is_(True),
+        Form.is_archived.is_(False),
+    )
     if allowed_unit_ids:
         stmt = stmt.where(
             or_(

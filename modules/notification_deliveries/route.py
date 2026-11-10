@@ -24,7 +24,7 @@ def list_notification_deliveries(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_notification_deliveries(db, tenant_id=tenant_id, limit=limit, offset=offset)
+    return controller.list_notification_deliveries(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
 
 
 @router.post("", response_model=NotificationDeliveryRead, status_code=status.HTTP_201_CREATED)
@@ -34,7 +34,7 @@ def create_notification_delivery(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_notification_delivery(db, payload)
+    return controller.create_notification_delivery(db, payload, employee.organisation_id)
 
 
 @router.get("/{delivery_id}", response_model=NotificationDeliveryRead)
@@ -44,7 +44,7 @@ def get_notification_delivery(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_notification_delivery(db, delivery_id)
+    return controller.get_notification_delivery(db, delivery_id, employee.organisation_id)
 
 
 @router.patch("/{delivery_id}", response_model=NotificationDeliveryRead)
@@ -55,7 +55,7 @@ def update_notification_delivery(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_notification_delivery(db, delivery_id, payload)
+    return controller.update_notification_delivery(db, delivery_id, payload, employee.organisation_id)
 
 
 @router.delete("/{delivery_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -65,5 +65,5 @@ def delete_notification_delivery(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_notification_delivery(db, delivery_id)
+    controller.delete_notification_delivery(db, delivery_id, employee.organisation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

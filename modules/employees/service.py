@@ -3,10 +3,24 @@ from sqlalchemy.orm import Session
 
 from modules.auth.service import hash_password
 from modules.roles.service import ensure_role_in_organisation
+from modules.units import repository as units_repository
 
 from . import repository
 from .dto import EmployeeCreate, EmployeeUpdate
 from .model import Employee
+
+
+def _ensure_links_in_organisation(db: Session, data: dict, organisation_id: int) -> None:
+    """Ids from the client that point at other rows must be the caller's
+    organisation's: the manager, and any extra assigned units."""
+    if data.get("manager_id") is not None:
+        manager = repository.get_employee(db, data["manager_id"])
+        if manager is None or manager.organisation_id != organisation_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Manager not found")
+    for unit_id in data.get("assigned_units") or []:
+        unit = units_repository.get_unit(db, unit_id)
+        if unit is None or unit.organisation_id != organisation_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
 
 
 def _ensure_employee(
@@ -65,6 +79,7 @@ def create_employee(
         raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
     if payload.role_id is not None:
         ensure_role_in_organisation(db, payload.role_id, organisation_id)
+    _ensure_links_in_organisation(db, payload.model_dump(), organisation_id)
 
     employee = repository.create_employee(
         db,
@@ -117,6 +132,7 @@ def update_employee(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Unit not in your assigned units")
     if data.get("role_id") is not None:
         ensure_role_in_organisation(db, data["role_id"], organisation_id)
+    _ensure_links_in_organisation(db, data, organisation_id)
     repository.update_employee(db, employee, data=data)
     db.commit()
     return repository.get_employee(db, employee_id)

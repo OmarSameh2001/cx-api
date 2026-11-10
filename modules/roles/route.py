@@ -156,7 +156,8 @@ def add_role_permissions(
     "/{role_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-@require_permission("roles:delete")
+# taking a permission off a role edits the role
+@require_permission("roles:update")
 def remove_role_permission(
     role_id: int,
     permission_id: int,

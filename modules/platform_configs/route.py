@@ -24,7 +24,7 @@ def list_platform_configs(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_platform_configs(db, tenant_id=tenant_id, limit=limit, offset=offset)
+    return controller.list_platform_configs(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
 
 
 @router.post("", response_model=PlatformConfigRead, status_code=status.HTTP_201_CREATED)
@@ -34,7 +34,7 @@ def create_platform_config(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_platform_config(db, payload)
+    return controller.create_platform_config(db, payload, employee.organisation_id)
 
 
 @router.get("/{config_id}", response_model=PlatformConfigRead)
@@ -44,7 +44,7 @@ def get_platform_config(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_platform_config(db, config_id)
+    return controller.get_platform_config(db, config_id, employee.organisation_id)
 
 
 @router.patch("/{config_id}", response_model=PlatformConfigRead)
@@ -55,7 +55,7 @@ def update_platform_config(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_platform_config(db, config_id, payload)
+    return controller.update_platform_config(db, config_id, payload, employee.organisation_id)
 
 
 @router.delete("/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -65,5 +65,5 @@ def delete_platform_config(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_platform_config(db, config_id)
+    controller.delete_platform_config(db, config_id, employee.organisation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

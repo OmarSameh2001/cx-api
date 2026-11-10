@@ -52,14 +52,15 @@ DEFAULT_ROLES: list[tuple[str, bool, list[tuple[str, str]] | None]] = [
             ("submissions", "update"),
         ],
     ),
+    # Agents answer forms and see their own submissions (/submissions/mine
+    # needs no permission). No submissions:read: that permission means
+    # reviewing everyone's submissions, correct exam answers included.
     (
         "agent",
         False,
         [
             ("customers", "read"),
             ("forms", "read"),
-            ("submissions", "read"),
-            ("submissions", "create"),
         ],
     ),
 ]

@@ -24,7 +24,7 @@ def list_mentions(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_mentions(db, tenant_id=tenant_id, limit=limit, offset=offset)
+    return controller.list_mentions(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
 
 
 @router.post("", response_model=MentionRead, status_code=status.HTTP_201_CREATED)
@@ -34,7 +34,7 @@ def create_mention(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_mention(db, payload)
+    return controller.create_mention(db, payload, employee.organisation_id)
 
 
 @router.get("/{mention_id}", response_model=MentionRead)
@@ -44,7 +44,7 @@ def get_mention(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.get_mention(db, mention_id)
+    return controller.get_mention(db, mention_id, employee.organisation_id)
 
 
 @router.patch("/{mention_id}", response_model=MentionRead)
@@ -55,7 +55,7 @@ def update_mention(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_mention(db, mention_id, payload)
+    return controller.update_mention(db, mention_id, payload, employee.organisation_id)
 
 
 @router.delete("/{mention_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -65,5 +65,5 @@ def delete_mention(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_mention(db, mention_id)
+    controller.delete_mention(db, mention_id, employee.organisation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
