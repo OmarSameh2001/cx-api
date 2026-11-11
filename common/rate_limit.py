@@ -1,18 +1,26 @@
-"""A small in-memory sliding-window rate limiter.
+"""Sliding-window rate limiter.
 
-Counts live in this process only: with several workers or serverless
-instances each keeps its own count, so the effective limit is per instance.
-Move the counts to Redis before relying on it for strict limits.
+With RATE_LIMIT_BACKEND=redis the counts are shared by every instance: each
+key is a sorted set of hit times that expires one window after its last hit,
+so nothing outlives its window. Keys are hashed, so no IP or email is stored.
+If Redis can't be reached the request is counted in memory instead (limits
+become per instance for that moment) rather than failing.
 """
 
+import hashlib
 import threading
 import time
+import uuid
 from collections import deque
 from typing import Optional
 
+import redis
 from fastapi import Request, status
+from loguru import logger
 
 from common.errors import CodedHTTPException
+from common.services.redis_client import get_redis, key as redis_key
+from config import RedisEnv
 
 _MAX_KEYS = 50_000
 
@@ -42,7 +50,55 @@ class SlidingWindowLimiter:
             self._hits.clear()
 
 
-limiter = SlidingWindowLimiter()
+# Trim old hits, refuse if full (returning seconds until a slot frees), else
+# record the hit and push the key's expiry to one window from now.
+_LUA = """
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - window)
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then
+  local oldest = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+  return tostring(tonumber(oldest[2]) + window - now)
+end
+redis.call('ZADD', KEYS[1], now, ARGV[4])
+redis.call('PEXPIRE', KEYS[1], math.ceil(window * 1000))
+return false
+"""
+
+
+class RedisSlidingWindowLimiter:
+    def __init__(self, fallback: SlidingWindowLimiter) -> None:
+        self._fallback = fallback
+        self._script = None
+
+    def hit(self, key: str, limit: int, window_seconds: float) -> Optional[float]:
+        client = get_redis()
+        if client is None:
+            return self._fallback.hit(key, limit, window_seconds)
+        try:
+            if self._script is None:
+                self._script = client.register_script(_LUA)
+            digest = hashlib.blake2b(key.encode(), digest_size=12).hexdigest()
+            now = time.time()
+            member = f"{now:.6f}:{uuid.uuid4().hex[:6]}"
+            result = self._script(
+                keys=[redis_key("rl", digest)], args=[now, window_seconds, limit, member]
+            )
+        except redis.RedisError as exc:
+            logger.warning("rate limit: Redis unavailable, counting in memory ({})", exc)
+            return self._fallback.hit(key, limit, window_seconds)
+        return None if result is None else float(result)
+
+    def reset(self) -> None:
+        self._fallback.reset()
+
+
+memory_limiter = SlidingWindowLimiter()
+limiter = (
+    RedisSlidingWindowLimiter(memory_limiter)
+    if RedisEnv.RATE_LIMIT_BACKEND == "redis"
+    else memory_limiter
+)
 
 
 def client_ip(request: Request) -> str:

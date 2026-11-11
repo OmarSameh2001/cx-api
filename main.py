@@ -12,6 +12,7 @@ from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
 from modules.forms.route import router as forms_router
+from modules.jobs.route import router as jobs_router
 from modules.organisations.route import router as organisations_router
 from modules.public_api.route import router as public_router
 from modules.roles.route import router as roles_router
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="cx-api", lifespan=lifespan)
 app.add_exception_handler(CodedHTTPException, coded_http_exception_handler)
 
-app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/"])
+app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/", "/internal/"])
 # answers are small; cap what respondents can send (inside CORS so a 413 still
 # carries CORS headers the browser can read)
 app.add_middleware(
@@ -70,6 +71,7 @@ app.include_router(platform_configs_router)
 app.include_router(notification_rules_router)
 app.include_router(notification_deliveries_router)
 app.include_router(ai_router)
+app.include_router(jobs_router)
 
 
 @app.get("/")

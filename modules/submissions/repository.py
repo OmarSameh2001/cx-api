@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from modules.customers.model import Customer
@@ -210,3 +210,20 @@ def save(db: Session, submission: Submission) -> Submission:
 def delete_submission(db: Session, submission: Submission) -> None:
     db.delete(submission)
     db.commit()
+
+
+def expire_open_submissions_before(db: Session, cutoff: datetime) -> int:
+    """Marks every in-progress attempt whose timer ended before `cutoff` as
+    expired, in one statement. Returns how many changed."""
+    result = db.execute(
+        update(Submission)
+        .where(
+            Submission.status == "in_progress",
+            Submission.expires_at.is_not(None),
+            Submission.expires_at < cutoff,
+        )
+        .values(status="expired")
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return result.rowcount or 0

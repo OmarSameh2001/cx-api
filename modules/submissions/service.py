@@ -284,6 +284,12 @@ def _check_and_apply_expiry(
     return False
 
 
+def expire_abandoned_attempts(db: Session) -> int:
+    """Background sweep: expires timed attempts the respondent walked away
+    from, using the same grace period as the on-request check."""
+    return repository.expire_open_submissions_before(db, _now() - GRACE)
+
+
 def get_respondent_form(
     db: Session, *, submission_id: int, principal: Principal
 ) -> Form:

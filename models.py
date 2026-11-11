@@ -2,6 +2,7 @@ from modules.assignments.model import *
 from modules.customers.model import *
 from modules.employees.model import *
 from modules.forms.model import *
+from modules.jobs.model import *
 from modules.keywords.model import *
 from modules.mentions.model import *
 from modules.notification_deliveries.model import *

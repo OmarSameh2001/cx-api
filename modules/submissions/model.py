@@ -63,6 +63,12 @@ class Submission(Base):
     __table_args__ = (
         Index("ix_submissions_form_user_status", "form_id", "user_id", "status"),
         Index("ix_submissions_form_customer_status", "form_id", "customer_id", "status"),
+        # the background expiry sweep (every minute)
+        Index(
+            "ix_submissions_open_expires_at",
+            "expires_at",
+            postgresql_where=text("status = 'in_progress'"),
+        ),
         Index(
             "uq_submissions_one_open_user",
             "form_id",

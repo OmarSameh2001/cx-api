@@ -6,6 +6,11 @@ and each test stubs the repository functions it relies on. TestClient is
 used without a `with` block, so the app's startup DB ping never runs.
 """
 
+import os
+
+# tests never touch the real Redis; counts stay in this process
+os.environ["RATE_LIMIT_BACKEND"] = "memory"
+
 import uuid
 from datetime import datetime, timezone
 
