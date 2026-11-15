@@ -56,7 +56,7 @@ def test_duplicating_a_form_keeps_it_in_the_callers_organisation(client, db, mon
     form = make_form(organisation_id=10, created_by=1)
     monkeypatch.setattr(forms_repo, "get_form", lambda db, fid: form)
     captured = {}
-    monkeypatch.setattr(forms_repo, "create_form", lambda db, data, fields, created_by: captured.update(data) or form)
+    monkeypatch.setattr(forms_repo, "create_form", lambda db, data, fields, created_by, **kw: captured.update(data) or form)
     monkeypatch.setattr(forms_repo, "form_has_submissions", lambda db, fid: False)
     client.post(f"/forms/{form.id}/duplicate", headers=employee_token(id=1, organisation_id=10, permissions=["forms:update"]))
     assert captured.get("organisation_id", 10) == 10

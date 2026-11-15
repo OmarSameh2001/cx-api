@@ -12,8 +12,9 @@ from typing import Any, Callable, Optional
 from loguru import logger
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
-from config import RedisEnv
+from config import EventsEnv, RedisEnv
 from db import SessionLocal
+from modules.events import service as events_service
 from modules.jobs import service as jobs_service
 from modules.submissions import service as submissions_service
 
@@ -42,6 +43,22 @@ def purge_failed_jobs() -> int:
     return count
 
 
+def relay_events() -> dict:
+    with SessionLocal() as db:
+        counts = events_service.relay(db)
+    if any(counts.values()):
+        logger.info("events relay: {}", counts)
+    return counts
+
+
+def purge_old_events() -> int:
+    with SessionLocal() as db:
+        count = events_service.purge_old_events(db)
+    if count:
+        logger.info("purged {} old event(s)", count)
+    return count
+
+
 def ping() -> str:
     """Smoke test: dispatch("jobs.ping") and watch the log."""
     logger.info("pong")
@@ -54,6 +71,9 @@ JOBS: dict[str, Job] = {
         Job("submissions.expire_abandoned_attempts", expire_abandoned_attempts,
             RedisEnv.EXPIRY_SWEEP_SECONDS),
         Job("jobs.purge_failed_jobs", purge_failed_jobs, RedisEnv.FAILED_JOB_PURGE_SECONDS),
+        # after the sweep, so the events it emits go out in the same tick
+        Job("events.relay", relay_events, EventsEnv.EVENTS_RELAY_SECONDS),
+        Job("events.purge", purge_old_events, EventsEnv.EVENTS_PURGE_SECONDS),
         Job("jobs.ping", ping),
     )
 }

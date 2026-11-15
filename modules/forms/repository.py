@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -164,12 +164,24 @@ def count_forms_assigned(
     return db.execute(stmt).scalar_one()
 
 
-def create_form(db: Session, *, data: dict, fields: list[dict], created_by: int) -> Form:
+def create_form(
+    db: Session,
+    *,
+    data: dict,
+    fields: list[dict],
+    created_by: int,
+    before_commit: Optional[Callable[[Form], None]] = None,
+) -> Form:
+    """`before_commit` runs after the flush (the form has its id) and inside
+    the same transaction, e.g. to emit an outbox event."""
     form = Form(**data, created_by=created_by)
     for f in fields:
         f.pop("id", None)
         form.fields.append(FormField(**f))
     db.add(form)
+    if before_commit is not None:
+        db.flush()
+        before_commit(form)
     db.commit()
     db.refresh(form)
     return form

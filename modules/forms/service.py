@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from common.errors import CodedHTTPException
 from modules.auth.dto import EmployeePrincipal
+from modules.events import service as events
 from modules.units import repository as units_repository
 
 from . import access, repository
@@ -239,6 +240,17 @@ def _ensure_units_in_organisation(db: Session, unit_ids, organisation_id: int) -
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
 
 
+def _emit_published(db: Session, form: Form) -> None:
+    events.emit(
+        db,
+        "form.published",
+        aggregate_type="form",
+        aggregate_id=form.id,
+        organisation_id=form.organisation_id,
+        payload={"form_id": form.id, "type": form.type, "public": bool(form.public_token)},
+    )
+
+
 def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal) -> Form:
     _ensure_units_in_organisation(db, payload.assigned_to_units, employee.organisation_id)
     data = payload.model_dump(exclude={"fields"})
@@ -247,7 +259,12 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
         data["public_token"] = _new_public_token()
     fields = [f.model_dump() for f in payload.fields]
     validate_branching(payload.type, data.get("sections"), fields)
-    return repository.create_form(db, data=data, fields=fields, created_by=employee.id)
+    # forms have no draft state: an active form is live from creation
+    publish = data.get("is_active", True)
+    return repository.create_form(
+        db, data=data, fields=fields, created_by=employee.id,
+        before_commit=(lambda form: _emit_published(db, form)) if publish else None,
+    )
 
 
 _COPIED_FORM_ATTRS = (
@@ -373,6 +390,8 @@ def toggle_active(
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to modify this form")
+    if active and not form.is_active:
+        _emit_published(db, form)
     form.is_active = active
     db.commit()
     db.refresh(form)

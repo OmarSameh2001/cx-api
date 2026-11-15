@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from common.services.text_scoring.scorer import score_text
 from modules.auth.dto import EmployeePrincipal, Principal
+from modules.events import service as events
 from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form, FormField
@@ -27,6 +28,42 @@ AUTO_GRADABLE = {"single_choice", "multi_choice", "boolean", "text"}
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _has_gradable(form: Form) -> bool:
+    return any(f.type in AUTO_GRADABLE for f in form.fields)
+
+
+def emit_submission_event(
+    db: Session, event_type: str, submission: Submission, *, organisation_id: Optional[int]
+) -> None:
+    """Adds the event to the caller's transaction (no commit). The submission
+    must have its id (flush first when it's new)."""
+    events.emit(
+        db,
+        event_type,
+        aggregate_type="submission",
+        aggregate_id=submission.id,
+        organisation_id=organisation_id,
+        payload={
+            "submission_id": submission.id,
+            "form_id": submission.form_id,
+            "user_id": submission.user_id,
+            "customer_id": submission.customer_id,
+            "attempt_number": submission.attempt_number,
+            "status": submission.status,
+            "score": submission.score,
+        },
+    )
+
+
+def emit_finalized_events(db: Session, submission: Submission, form: Form) -> None:
+    """submitted or late, plus graded when the form has auto-graded questions."""
+    emit_submission_event(db, f"submission.{submission.status}", submission,
+                          organisation_id=form.organisation_id)
+    if _has_gradable(form):
+        emit_submission_event(db, "submission.graded", submission,
+                              organisation_id=form.organisation_id)
 
 
 def _normalize_multi(value: Any) -> set[str]:
@@ -279,6 +316,8 @@ def _check_and_apply_expiry(
         return False
     if _now() > submission.expires_at + GRACE:
         submission.status = "expired"
+        emit_submission_event(db, "submission.expired", submission,
+                              organisation_id=submission.form.organisation_id if submission.form else None)
         repository.save(db, submission)
         return True
     return False
@@ -287,7 +326,11 @@ def _check_and_apply_expiry(
 def expire_abandoned_attempts(db: Session) -> int:
     """Background sweep: expires timed attempts the respondent walked away
     from, using the same grace period as the on-request check."""
-    return repository.expire_open_submissions_before(db, _now() - GRACE)
+    expired = repository.expire_open_submissions_before(db, _now() - GRACE)
+    for submission, organisation_id in expired:
+        emit_submission_event(db, "submission.expired", submission, organisation_id=organisation_id)
+    db.commit()
+    return len(expired)
 
 
 def get_respondent_form(
@@ -422,6 +465,7 @@ def submit_submission(
     submission.status = "late" if is_late else "submitted"
     submission.submitted_at = now
     submission.score = _score(form, final_answers, visited)
+    emit_finalized_events(db, submission, form)
     return repository.save(db, submission)
 
 

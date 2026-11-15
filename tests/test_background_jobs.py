@@ -14,6 +14,7 @@ from config import RedisEnv
 from modules.jobs import service as jobs_service
 from modules.submissions import repository as subs_repo
 from modules.submissions import service as subs_service
+from modules.submissions.model import Submission
 
 
 class _FakeRedis:
@@ -61,13 +62,28 @@ def test_expiry_sweep_uses_the_grace_period(monkeypatch):
 
     def fake_expire(db, cutoff):
         seen["cutoff"] = cutoff
-        return 3
+        return [(Submission(id=i, form_id=9, status="expired", attempt_number=1), 4) for i in (1, 2, 3)]
 
+    class _Db:
+        commits = 0
+
+        def add(self, obj):
+            seen.setdefault("added", []).append(obj)
+
+        def commit(self):
+            self.commits += 1
+
+    db = _Db()
     monkeypatch.setattr(subs_repo, "expire_open_submissions_before", fake_expire)
     now = subs_service._now()
     monkeypatch.setattr(subs_service, "_now", lambda: now)
-    assert subs_service.expire_abandoned_attempts(db=None) == 3
+    assert subs_service.expire_abandoned_attempts(db) == 3
     assert seen["cutoff"] == now - subs_service.GRACE
+    # one submission.expired event per attempt, committed with the update
+    assert [(e.event_type, e.aggregate_id, e.organisation_id) for e in seen["added"]] == [
+        ("submission.expired", i, 4) for i in (1, 2, 3)
+    ]
+    assert db.commits == 1
 
 
 def test_jobs_retry_with_backoff_from_env():

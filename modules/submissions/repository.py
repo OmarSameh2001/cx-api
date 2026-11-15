@@ -212,18 +212,32 @@ def delete_submission(db: Session, submission: Submission) -> None:
     db.commit()
 
 
-def expire_open_submissions_before(db: Session, cutoff: datetime) -> int:
+def expire_open_submissions_before(db: Session, cutoff: datetime) -> list[tuple[Submission, int]]:
     """Marks every in-progress attempt whose timer ended before `cutoff` as
-    expired, in one statement. Returns how many changed."""
-    result = db.execute(
+    expired, in one statement, without committing (the caller adds the
+    events first). Returns each changed submission with its organisation."""
+    rows = db.execute(
         update(Submission)
         .where(
+            Submission.form_id == Form.id,
             Submission.status == "in_progress",
             Submission.expires_at.is_not(None),
             Submission.expires_at < cutoff,
         )
         .values(status="expired")
+        .returning(
+            Submission.id, Submission.form_id, Submission.user_id, Submission.customer_id,
+            Submission.attempt_number, Submission.score, Form.organisation_id,
+        )
         .execution_options(synchronize_session=False)
-    )
-    db.commit()
-    return result.rowcount or 0
+    ).all()
+    return [
+        (
+            Submission(
+                id=r.id, form_id=r.form_id, user_id=r.user_id, customer_id=r.customer_id,
+                attempt_number=r.attempt_number, score=r.score, status="expired",
+            ),
+            r.organisation_id,
+        )
+        for r in rows
+    ]

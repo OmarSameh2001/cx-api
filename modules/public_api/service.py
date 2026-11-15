@@ -8,6 +8,7 @@ from modules.customers.model import Customer
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form
 from modules.submissions import repository as submissions_repository
+from modules.submissions import service as submissions_service
 from modules.submissions.answer_rules import validate_answer_values
 from modules.submissions.model import Submission
 from modules.submissions.service import (
@@ -106,6 +107,8 @@ def submit_public(
         score=score,
     )
     db.add(submission)
+    db.flush()  # the event needs the id; both are committed together
+    submissions_service.emit_finalized_events(db, submission, form)
     db.commit()
     db.refresh(submission)
     return submission
