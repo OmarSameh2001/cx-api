@@ -20,7 +20,11 @@ class Organisation(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # an external image URL (older organisations); logo_file_id wins when set
     logo: Mapped[Optional[str]] = mapped_column(String(512))
+    logo_file_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("files.id", ondelete="SET NULL", use_alter=True, name="fk_organisations_logo_file_id")
+    )
     industry: Mapped[Optional[str]] = mapped_column(String(120))
     contact_info: Mapped[Optional[str]] = mapped_column(Text)
     subscription_end: Mapped[Optional[date]] = mapped_column(Date)

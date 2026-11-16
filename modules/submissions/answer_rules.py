@@ -19,6 +19,7 @@ MAX_TEXT_LENGTH = 5000
 MAX_SHORT_LENGTH = 255
 SCALE_POINTS = 5  # the answer widget offers 1..5
 
+_FILE_ANSWER_KEYS = {"file_id", "token", "name", "content_type", "size"}
 _EMAIL = TypeAdapter(EmailStr)
 _PHONE = re.compile(r"^\+?[0-9 ()\-.]{3,32}$")
 
@@ -46,6 +47,18 @@ def _problem(field: FormField, value: Any, *, draft: bool) -> str | None:
             isinstance(value, str) and value.strip().lower() in ("true", "false")
         )
         return None if ok else "must be true or false"
+    if type_ == "file":
+        # {"file_id": 12} from the upload, plus "token" for public respondents;
+        # stored answers also carry name, content_type and size
+        if not isinstance(value, dict) or set(value) - _FILE_ANSWER_KEYS:
+            return "must be an uploaded file"
+        file_id = value.get("file_id")
+        if not isinstance(file_id, int) or isinstance(file_id, bool) or file_id <= 0:
+            return "must be an uploaded file"
+        token = value.get("token")
+        if token is not None and (not isinstance(token, str) or len(token) > 128):
+            return "has an invalid file token"
+        return None
     if type_ == "scale":
         ok = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= SCALE_POINTS
         if isinstance(value, str) and value.isdigit():

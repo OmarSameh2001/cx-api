@@ -84,7 +84,10 @@ def test_only_platform_admin_creates_or_deletes_organisations(client, orgs, db, 
     assert db.commits == 0 and db.deleted == []
 
 
-def test_platform_admin_deletes_an_organisation(client, orgs, db):
+def test_platform_admin_deletes_an_organisation(client, orgs, db, monkeypatch):
+    from modules.files import service as files
+
+    monkeypatch.setattr(files.repository, "files_of_organisations", lambda db, ids: [])
     assert client.delete("/organisations/20", headers=platform()).status_code == 204
     assert db.deleted == [ORGS[20]]
 

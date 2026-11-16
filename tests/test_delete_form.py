@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from modules.files import repository as files_repo
 from modules.forms import repository as forms_repo
 from tests.conftest import FakeSession, employee_token, make_form
 
@@ -24,6 +25,11 @@ def test_form_with_responses_returns_409(client, monkeypatch, inactive_form):
     assert res.json()["error"] == "form_has_submissions"
     assert "Archive" in res.json()["detail"]
     assert deleted == []
+
+
+@pytest.fixture(autouse=True)
+def _no_file_queries(monkeypatch):
+    monkeypatch.setattr(files_repo, "mark_deleted_for_form", lambda db, form_id, now: 0)
 
 
 def test_form_with_only_drafts_is_deleted(client, monkeypatch, inactive_form):

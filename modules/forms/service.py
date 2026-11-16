@@ -378,6 +378,11 @@ def delete_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> No
     )
     if repository.form_has_submissions(db, form.id):
         raise responses
+    from modules.files import service as files
+
+    # the files cleanup job removes their stored bytes; this is rolled back
+    # with everything else if the delete fails
+    files.delete_for_form(db, form.id)
     # drafts go with the form; a response submitted since the check above
     # still blocks the delete at the foreign key
     if not repository.delete_form(db, form):

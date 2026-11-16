@@ -66,6 +66,45 @@ def emit_finalized_events(db: Session, submission: Submission, form: Form) -> No
                               organisation_id=form.organisation_id)
 
 
+def resolve_file_answers(
+    db: Session, form: Form, answers: dict[str, Any], *, actor, submission_id: Optional[int]
+) -> tuple[dict[str, Any], list]:
+    """Checks every file answer against the file service and swaps it for
+    the stored form {file_id, name, content_type, size}. Returns the answers
+    and the files they use (attach them once the submission has an id)."""
+    from modules.files import service as files
+
+    out = dict(answers)
+    used = []
+    for field in form.fields:
+        value = out.get(str(field.id))
+        if field.type != "file" or not isinstance(value, dict):
+            continue
+        file, stored = files.resolve_answer_file(
+            db, form_id=form.id, organisation_id=form.organisation_id, field_id=field.id,
+            value=value, actor=actor, submission_id=submission_id,
+        )
+        out[str(field.id)] = stored
+        used.append(file)
+    return out, used
+
+
+def attach_answer_files(db: Session, submission: Submission, used: list, form: Form) -> None:
+    """Attaches the files the answers use; files this submission no longer
+    uses (replaced or removed answers) are deleted. No commit."""
+    from modules.files import repository as files_repository
+    from modules.files import service as files
+
+    if not used and not any(f.type == "file" for f in form.fields):
+        return
+    keep = {f.id for f in used}
+    for file in used:
+        files.attach(db, file, attached_type="submission", attached_id=submission.id)
+    for file in files_repository.attached_files(db, "submission", [submission.id]):
+        if file.id not in keep:
+            files.discard(db, file)
+
+
 def _normalize_multi(value: Any) -> set[str]:
     if value is None:
         return set()
@@ -426,6 +465,8 @@ def save_draft(
     validate_answer_values(submission.form, incoming, draft=True)
     merged = dict(submission.answers or {})
     merged.update(incoming)
+    merged, used = resolve_file_answers(db, submission.form, merged, actor=principal, submission_id=submission.id)
+    attach_answer_files(db, submission, used, submission.form)
     submission.answers = merged
     return repository.save(db, submission)
 
@@ -459,6 +500,10 @@ def submit_submission(
     submission.answers = final_answers
     validate_answer_values(form, final_answers)
     _validate_required(form, final_answers, visited)
+    # files on skipped branches were pruned above, so they are released here
+    final_answers, used = resolve_file_answers(db, form, final_answers, actor=principal, submission_id=submission.id)
+    attach_answer_files(db, submission, used, form)
+    submission.answers = final_answers
 
     now = _now()
     is_late = bool(submission.expires_at and now > submission.expires_at)
@@ -667,4 +712,7 @@ def delete_submission(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Finalized submissions cannot be deleted"
         )
+    from modules.files import service as files
+
+    files.delete_attached(db, attached_type="submission", attached_ids=[submission.id])
     repository.delete_submission(db, submission)

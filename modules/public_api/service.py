@@ -8,6 +8,7 @@ from modules.customers.model import Customer
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form
 from modules.submissions import repository as submissions_repository
+from modules.files.service import PublicActor
 from modules.submissions import service as submissions_service
 from modules.submissions.answer_rules import validate_answer_values
 from modules.submissions.model import Submission
@@ -82,6 +83,9 @@ def submit_public(
     answers = _prune_to_path(form, payload.answers, visited)
     validate_answer_values(form, answers)
     _validate_required(form, answers, visited)
+    answers, files_used = submissions_service.resolve_file_answers(
+        db, form, answers, actor=PublicActor(form_id=form.id), submission_id=None
+    )
 
     customer = _resolve_customer(db, form, payload.customer)
     used = submissions_repository.count_finalized_attempts(
@@ -108,7 +112,31 @@ def submit_public(
     )
     db.add(submission)
     db.flush()  # the event needs the id; both are committed together
+    submissions_service.attach_answer_files(db, submission, files_used, form)
     submissions_service.emit_finalized_events(db, submission, form)
     db.commit()
     db.refresh(submission)
     return submission
+
+
+def start_upload(db: Session, *, token: str, payload):
+    """A respondent's file for one of the form's file questions."""
+    from modules.files import controller as files_controller
+
+    form = _get_form_for_public(db, token)
+    return files_controller.start_public_upload(db, form.id, payload)
+
+
+def question_limits(db: Session, *, token: str, field_id: int):
+    from modules.files import controller as files_controller
+
+    form = _get_form_for_public(db, token)
+    return files_controller.public_question_limits(db, form_id=form.id, field_id=field_id)
+
+
+def complete_upload(db: Session, *, token: str, file_id: int, file_token: str):
+    from modules.files import controller as files_controller
+    from modules.files.service import PublicActor
+
+    form = _get_form_for_public(db, token)
+    return files_controller.complete_upload(db, file_id, PublicActor(form_id=form.id, token=file_token))

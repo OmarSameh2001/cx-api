@@ -11,6 +11,7 @@ from db import engine
 from modules.assignments.route import router as assignments_router
 from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
+from modules.files.route import router as files_router
 from modules.forms.route import router as forms_router
 from modules.jobs.route import router as jobs_router
 from modules.organisations.route import router as organisations_router
@@ -72,6 +73,7 @@ app.include_router(notification_rules_router)
 app.include_router(notification_deliveries_router)
 app.include_router(ai_router)
 app.include_router(jobs_router)
+app.include_router(files_router)
 
 
 @app.get("/")

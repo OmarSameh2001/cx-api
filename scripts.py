@@ -324,6 +324,9 @@ def _e2e_isolation_remove(db) -> int:
     ]
     if not ids:
         return 0
+    from modules.files import service as files
+
+    stored = files.stored_objects_of_organisations(db, ids)
     p = {"o": ids}
     exp = bindparam("o", expanding=True)
 
@@ -347,7 +350,10 @@ def _e2e_isolation_remove(db) -> int:
     run("DELETE FROM roles WHERE organisation_id IN :o")
     run("UPDATE units SET parent_unit_id = NULL WHERE organisation_id IN :o")
     run("DELETE FROM units WHERE organisation_id IN :o")
-    run("DELETE FROM organisations WHERE id IN :o")  # customers cascade
+    run("UPDATE organisations SET logo_file_id = NULL WHERE id IN :o")
+    run("DELETE FROM organisations WHERE id IN :o")  # customers and files cascade
+    db.flush()
+    files.delete_stored_objects(stored)  # test fixture: no need to wait for the commit
     return len(ids)
 
 

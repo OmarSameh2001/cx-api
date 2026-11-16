@@ -3,6 +3,7 @@ from modules.customers.model import *
 from modules.employees.model import *
 from modules.events.model import *
 from modules.forms.model import *
+from modules.files.model import *
 from modules.jobs.model import *
 from modules.keywords.model import *
 from modules.mentions.model import *

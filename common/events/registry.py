@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 Handler = Callable[[Session, object], None]
 
 # modules whose import registers handlers, e.g. "modules.workflows.handlers"
-HANDLER_MODULES: list[str] = []
+HANDLER_MODULES: list[str] = ["modules.files.handlers"]
 
 _handlers: dict[str, dict[str, Handler]] = {}
 _loaded = False

@@ -15,20 +15,26 @@ def list_organisations(
     return Page(items=summaries, total=total, limit=limit, offset=offset)
 
 
+def _read(db: Session, org) -> OrganisationRead:
+    read = OrganisationRead.model_validate(org)
+    links = service.logo_links(db, org)
+    if links:
+        read.logo, read.logo_thumb = links
+    return read
+
+
 def get_organisation(db: Session, org_id: int, viewer: EmployeePrincipal) -> OrganisationRead:
-    return OrganisationRead.model_validate(service.get_organisation(db, org_id, viewer=viewer))
+    return _read(db, service.get_organisation(db, org_id, viewer=viewer))
 
 
 def create_organisation(db: Session, payload: OrganisationCreate) -> OrganisationRead:
-    return OrganisationRead.model_validate(service.create_organisation(db, payload=payload))
+    return _read(db, service.create_organisation(db, payload=payload))
 
 
 def update_organisation(
     db: Session, org_id: int, payload: OrganisationUpdate, viewer: EmployeePrincipal
 ) -> OrganisationRead:
-    return OrganisationRead.model_validate(
-        service.update_organisation(db, org_id, payload=payload, viewer=viewer)
-    )
+    return _read(db, service.update_organisation(db, org_id, payload=payload, viewer=viewer))
 
 
 def delete_organisation(db: Session, org_id: int) -> None:

@@ -23,6 +23,7 @@ EVENT_TYPES = (
     "submission.graded",
     "submission.expired",
     "form.published",
+    "file.uploaded",
 )
 
 # pending: waiting for its handlers; done: every handler ran;

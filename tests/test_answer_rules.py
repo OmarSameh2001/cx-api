@@ -24,7 +24,9 @@ def form_with(type_, options=None):
         ("date", None, "2026-10-23"),
         ("email", None, "ann@acme.io"),
         ("phone_number", None, "+1 (555) 010-0100"),
-        ("file", None, "report.pdf"),
+        ("file", None, {"file_id": 12}),
+        ("file", None, {"file_id": 12, "token": "t" * 32}),
+        ("file", None, {"file_id": 12, "name": "a.pdf", "content_type": "application/pdf", "size": 9}),
         ("text", None, ""),  # empty is the required check's business
     ],
 )
@@ -47,6 +49,10 @@ def test_accepts(type_, options, value):
         ("email", None, "not-an-email"),
         ("phone_number", None, "call me"),
         ("file", None, "x" * 300),
+        ("file", None, "report.pdf"),  # a bare name: the file was never uploaded
+        ("file", None, {"file_id": "12"}),
+        ("file", None, {"file_id": 12, "path": "/etc/passwd"}),
+        ("file", None, {"file_id": True}),
     ],
 )
 def test_rejects(type_, options, value):
