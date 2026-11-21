@@ -41,14 +41,21 @@ class Tenant(Base):
     organisation: Mapped[Optional["Organisation"]] = relationship(
         back_populates="tenant"
     )
-    mentions: Mapped[List["Mention"]] = relationship(back_populates="tenant")
-    platform_configs: Mapped[List["TenantPlatformConfig"]] = relationship(
-        back_populates="tenant"
+    # The database deletes these with the tenant (ON DELETE CASCADE). With
+    # passive_deletes the ORM leaves that to it, instead of loading every row
+    # to null its tenant_id (which is NOT NULL, so the delete would fail).
+    mentions: Mapped[List["Mention"]] = relationship(
+        back_populates="tenant", passive_deletes=True
     )
-    keywords: Mapped[List["Keyword"]] = relationship(back_populates="tenant")
+    platform_configs: Mapped[List["TenantPlatformConfig"]] = relationship(
+        back_populates="tenant", passive_deletes=True
+    )
+    keywords: Mapped[List["Keyword"]] = relationship(
+        back_populates="tenant", passive_deletes=True
+    )
     notification_rules: Mapped[List["NotificationRule"]] = relationship(
-        back_populates="tenant"
+        back_populates="tenant", passive_deletes=True
     )
     notification_deliveries: Mapped[List["NotificationDelivery"]] = relationship(
-        back_populates="tenant"
+        back_populates="tenant", passive_deletes=True
     )

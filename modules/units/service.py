@@ -77,6 +77,8 @@ def update_unit(db: Session, unit_id: int, organisation_id: int, *, payload: Uni
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent unit not found in this organisation")
         if data["parent_unit_id"] == unit_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be its own parent")
+        if data["parent_unit_id"] in repository.get_descendant_unit_ids(db, unit_id):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be moved under one of its own sub-units")
     repository.update_unit(db, unit, data=data)
     db.commit()
     return repository.get_unit(db, unit_id)

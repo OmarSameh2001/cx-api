@@ -17,9 +17,10 @@ def _ensure_links_in_organisation(db: Session, data: dict, organisation_id: int)
         manager = repository.get_employee(db, data["manager_id"])
         if manager is None or manager.organisation_id != organisation_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Manager not found")
-    for unit_id in data.get("assigned_units") or []:
-        unit = units_repository.get_unit(db, unit_id)
-        if unit is None or unit.organisation_id != organisation_id:
+    wanted = list(dict.fromkeys(data.get("assigned_units") or []))
+    found = units_repository.unit_ids_in_organisation(db, wanted, organisation_id)
+    for unit_id in wanted:  # the first missing one, in the order sent
+        if unit_id not in found:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
 
 

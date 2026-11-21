@@ -28,7 +28,9 @@ class Role(Base):
     role_permissions: Mapped[List["RolePermission"]] = relationship(
         back_populates="role", cascade="all, delete-orphan"
     )
-    employees: Mapped[List["Employee"]] = relationship(back_populates="role")
+    # delete_role refuses a role that still has employees, and their FK would
+    # block it anyway, so the ORM needn't load them to null role_id
+    employees: Mapped[List["Employee"]] = relationship(back_populates="role", passive_deletes=True)
 
 
 class Permission(Base):

@@ -155,7 +155,7 @@ def test_employee_cannot_be_given_another_organisations_role(
 
 def test_new_organisation_gets_the_default_roles(client, db, monkeypatch):
     monkeypatch.setattr(orgs_repo, "get_organisation_by_external_id", lambda db, x: None)
-    monkeypatch.setattr(roles_repo, "get_permission_by_pair", lambda db, r, a: None)
+    monkeypatch.setattr(roles_repo, "list_permissions", lambda db: [])
     monkeypatch.setattr(roles_repo, "get_role_by_name", lambda db, n, o: None)
     monkeypatch.setattr(
         orgs_repo,

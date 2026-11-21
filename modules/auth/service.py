@@ -99,10 +99,9 @@ def _build_employee_claims(db: Session, employee) -> dict:
     role_name: Optional[str] = None
     is_admin: bool = False
     if employee.role_id is not None:
-        permissions = repository.list_permission_names_for_role(db, employee.role_id)
-        role = repository.get_role_with_permissions(db, employee.role_id)
-        role_name = role.name if role else None
-        is_admin = role.is_system if role else False
+        role = repository.get_role_claims(db, employee.role_id)
+        if role is not None:
+            role_name, is_admin, permissions = role
 
     assigned_unit_ids: list[int] = []
     if employee.unit_id is not None:

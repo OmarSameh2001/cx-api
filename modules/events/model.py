@@ -65,6 +65,12 @@ class OutboxEvent(Base):
             postgresql_where=text("status = 'pending'"),
         ),
         Index("ix_event_outbox_aggregate", "aggregate_type", "aggregate_id"),
+        # the retention purge: handled events by age
+        Index(
+            "ix_event_outbox_finished",
+            "processed_at",
+            postgresql_where=text("status IN ('done', 'failed')"),
+        ),
     )
 
 

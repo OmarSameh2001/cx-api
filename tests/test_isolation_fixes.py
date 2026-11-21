@@ -37,6 +37,10 @@ UNITS = {1: SimpleNamespace(id=1, organisation_id=OWN), 2: SimpleNamespace(id=2,
 @pytest.fixture(autouse=True)
 def world(monkeypatch):
     monkeypatch.setattr(units_repo, "get_unit", lambda db, uid: UNITS.get(uid))
+    monkeypatch.setattr(
+        units_repo, "unit_ids_in_organisation",
+        lambda db, ids, org: {i for i in ids if i in UNITS and UNITS[i].organisation_id == org},
+    )
     tenants = {TENANT_OWN: SimpleNamespace(organisation_id=OWN), TENANT_OTHER: SimpleNamespace(organisation_id=OTHER)}
     monkeypatch.setattr(tenants_repo, "get_tenant", lambda db, tid: tenants.get(tid))
 

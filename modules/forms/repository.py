@@ -112,7 +112,7 @@ def list_forms_assigned(
     unit_ids: list[int],
     name: Optional[str] = None,
     form_type: Optional[str] = None,
-    limit: int = 50,
+    limit: Optional[int] = 50,  # None: every matching form
     offset: int = 0,
 ) -> list[Form]:
     stmt = (

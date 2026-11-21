@@ -105,7 +105,7 @@ def delete_role(db: Session, *, role_id: int, organisation_id: int) -> None:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "System roles cannot be deleted"
         )
-    if role.employees:
+    if repository.role_has_employees(db, role.id):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Role is assigned to employees; reassign before deletion",
@@ -183,10 +183,13 @@ def delete_permission(db: Session, *, permission_id: int) -> None:
 
 
 def _get_or_create_catalogue(db: Session) -> tuple[dict[tuple[str, str], Permission], list[Permission]]:
+    existing: dict[tuple[str, str], Permission] = {}
+    for p in repository.list_permissions(db):  # one query for the whole catalogue
+        existing.setdefault((p.resource, p.action), p)
     catalogue: dict[tuple[str, str], Permission] = {}
     created: list[Permission] = []
     for resource, action in PermissionKey.all_pairs():
-        permission = repository.get_permission_by_pair(db, resource, action)
+        permission = existing.get((resource, action))
         if permission is None:
             permission = repository.create_permission(db, resource=resource, action=action)
             created.append(permission)

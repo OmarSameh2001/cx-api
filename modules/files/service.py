@@ -775,6 +775,18 @@ def put_bytes(
 # --- form answers ----------------------------------------------------------------
 
 
+def load_answer_files(db: Session, values: list) -> dict[int, StoredFile]:
+    """The files these answer values name, in one query. A value without a
+    usable file_id is skipped here; resolve_answer_file rejects it as before."""
+    ids = []
+    for value in values:
+        try:
+            ids.append(int(value["file_id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return repository.get_files(db, ids)
+
+
 def resolve_answer_file(
     db: Session,
     *,
@@ -784,10 +796,13 @@ def resolve_answer_file(
     value: dict,
     actor: Actor,
     submission_id: Optional[int],
+    preloaded: Optional[dict[int, StoredFile]] = None,
 ) -> tuple[StoredFile, dict]:
     """Checks a file answer ({"file_id", "token"?}) and returns the file with
-    the value to store: {file_id, name, content_type, size}."""
-    file = repository.get_file(db, int(value["file_id"]))
+    the value to store: {file_id, name, content_type, size}. `preloaded`
+    (from load_answer_files) saves a query per answer."""
+    file_id = int(value["file_id"])
+    file = preloaded.get(file_id) if preloaded is not None else repository.get_file(db, file_id)
     usable = (
         file is not None
         and file.status == "ready"
@@ -845,11 +860,17 @@ def purge_deleted(db: Session, *, limit: Optional[int] = None) -> int:
 
 def clear_stale_replacements(db: Session) -> int:
     """Replacement uploads that never completed: forget them, trash their bytes."""
-    from sqlalchemy import select
+    from sqlalchemy import DateTime, cast, select
 
     cutoff = _now() - timedelta(minutes=FilesEnv.FILES_PENDING_TTL_MINUTES)
+    # only stale ones, oldest first: a batch of recent replacements can't
+    # keep older stale ones from ever being reached
+    requested_at = cast(StoredFile.replacement["requested_at"].astext, DateTime(timezone=True))
     rows = db.execute(
-        select(StoredFile).where(StoredFile.replacement.is_not(None)).limit(FilesEnv.FILES_CLEANUP_BATCH_SIZE)
+        select(StoredFile)
+        .where(StoredFile.replacement.is_not(None), requested_at < cutoff)
+        .order_by(requested_at, StoredFile.id)
+        .limit(FilesEnv.FILES_CLEANUP_BATCH_SIZE)
     ).scalars().all()
     cleared = 0
     for file in rows:

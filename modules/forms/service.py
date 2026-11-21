@@ -215,9 +215,10 @@ def list_forms(
 
 def _ensure_units_in_organisation(db: Session, unit_ids, organisation_id: int) -> None:
     """A form can only be targeted at units of its own organisation."""
-    for unit_id in unit_ids or []:
-        unit = units_repository.get_unit(db, unit_id)
-        if unit is None or unit.organisation_id != organisation_id:
+    wanted = list(dict.fromkeys(unit_ids or []))
+    found = units_repository.unit_ids_in_organisation(db, wanted, organisation_id)
+    for unit_id in wanted:  # the first missing one, in the order sent
+        if unit_id not in found:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
 
 
@@ -649,37 +650,38 @@ def list_assigned_to_me(
     if employee.unit_id is not None and employee.unit_id not in unit_ids:
         unit_ids.append(employee.unit_id)
 
-    forms = repository.list_forms_assigned(
-        db,
-        organisation_id=employee.organisation_id,
-        submitter_type=employee.principal,
-        unit_ids=unit_ids,
-        name=name,
-        form_type=form_type,
-        limit=limit,
-        offset=offset,
-    )
-    total = repository.count_forms_assigned(
-        db,
+    filters = dict(
         organisation_id=employee.organisation_id,
         submitter_type=employee.principal,
         unit_ids=unit_ids,
         name=name,
         form_type=form_type,
     )
+    if my_status:
+        # my_status is worked out per form below, not in SQL, so filtering by
+        # it pages over every assigned form; paging first would return short
+        # pages and a total that ignores the filter
+        forms = repository.list_forms_assigned(db, **filters, limit=None, offset=0)
+        total = None
+    else:
+        forms = repository.list_forms_assigned(db, **filters, limit=limit, offset=offset)
+        total = repository.count_forms_assigned(db, **filters)
 
     if not forms:
-        return [], total
+        return [], total or 0
 
     form_ids = [f.id for f in forms]
+    # only what the status needs, not the answers
     rows = db.execute(
-        select(Submission).where(
+        select(
+            Submission.form_id, Submission.status, Submission.expires_at, Submission.submitted_at
+        ).where(
             Submission.form_id.in_(form_ids),
             Submission.user_id == employee.id,
         )
-    ).scalars().all()
+    ).all()
 
-    by_form: dict[int, list[Submission]] = {}
+    by_form: dict[int, list] = {}
     for s in rows:
         by_form.setdefault(s.form_id, []).append(s)
 
@@ -722,4 +724,6 @@ def list_assigned_to_me(
             }
         )
 
+    if my_status:
+        return items[offset:offset + limit], len(items)
     return items, total

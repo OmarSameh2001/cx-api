@@ -1,7 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from config import AuthEnv
 from modules.employees.model import Employee
@@ -16,22 +16,21 @@ def get_employee_by_id(db: Session, employee_id: int) -> Optional[Employee]:
     return db.get(Employee, employee_id)
 
 
-def get_role_with_permissions(db: Session, role_id: int) -> Optional[Role]:
+def get_role_claims(db: Session, role_id: int) -> Optional[tuple[str, bool, list[str]]]:
+    """(name, is_system, ["resource:action", ...]) for the token, in one
+    query; None if the role doesn't exist."""
     stmt = (
-        select(Role)
+        select(Role.name, Role.is_system, Permission.resource, Permission.action)
+        .outerjoin(RolePermission, RolePermission.role_id == Role.id)
+        .outerjoin(Permission, Permission.id == RolePermission.permission_id)
         .where(Role.id == role_id)
-        .options(selectinload(Role.role_permissions).selectinload(RolePermission.permission))
+        .order_by(RolePermission.id)
     )
-    return db.execute(stmt).scalar_one_or_none()
-
-
-def list_permission_names_for_role(db: Session, role_id: int) -> list[str]:
-    stmt = (
-        select(Permission.resource, Permission.action)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .where(RolePermission.role_id == role_id)
-    )
-    return [f"{resource}:{action}" for resource, action in db.execute(stmt).all()]
+    rows = db.execute(stmt).all()
+    if not rows:
+        return None
+    permissions = [f"{r.resource}:{r.action}" for r in rows if r.resource is not None]
+    return rows[0].name, rows[0].is_system, permissions
 
 
 def _principal(db: Session, principal_type: str, principal_id: int):

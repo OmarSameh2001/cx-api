@@ -76,13 +76,16 @@ def resolve_file_answers(
 
     out = dict(answers)
     used = []
-    for field in form.fields:
-        value = out.get(str(field.id))
-        if field.type != "file" or not isinstance(value, dict):
-            continue
+    file_answers = [
+        (field, out.get(str(field.id)))
+        for field in form.fields
+        if field.type == "file" and isinstance(out.get(str(field.id)), dict)
+    ]
+    preloaded = files.load_answer_files(db, [value for _, value in file_answers])
+    for field, value in file_answers:
         file, stored = files.resolve_answer_file(
             db, form_id=form.id, organisation_id=form.organisation_id, field_id=field.id,
-            value=value, actor=actor, submission_id=submission_id,
+            value=value, actor=actor, submission_id=submission_id, preloaded=preloaded,
         )
         out[str(field.id)] = stored
         used.append(file)

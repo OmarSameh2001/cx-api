@@ -13,7 +13,9 @@ def get_descendant_unit_ids(db: Session, root_unit_id: int) -> list[int]:
         .where(Unit.id == root_unit_id)
         .cte(name="unit_tree", recursive=True)
     )
-    tree = base.union_all(
+    # UNION, not UNION ALL: a row already in the tree is not added again, so
+    # the walk ends even if the units form a cycle
+    tree = base.union(
         select(Unit.id, Unit.parent_unit_id).join(base, Unit.parent_unit_id == base.c.id)
     )
     rows = db.execute(select(tree.c.id)).all()
@@ -22,6 +24,14 @@ def get_descendant_unit_ids(db: Session, root_unit_id: int) -> list[int]:
 
 def get_unit(db: Session, unit_id: int) -> Optional[Unit]:
     return db.get(Unit, unit_id)
+
+
+def unit_ids_in_organisation(db: Session, unit_ids: list[int], organisation_id: int) -> set[int]:
+    """Which of these unit ids exist in the organisation, in one query."""
+    if not unit_ids:
+        return set()
+    stmt = select(Unit.id).where(Unit.id.in_(unit_ids), Unit.organisation_id == organisation_id)
+    return set(db.execute(stmt).scalars().all())
 
 
 def get_unit_by_external_id(db: Session, external_id: str) -> Optional[Unit]:

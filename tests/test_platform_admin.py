@@ -174,11 +174,7 @@ def test_only_platform_admin_changes_the_catalogue(client, db, method, path, bod
 
 @pytest.mark.parametrize("flag", [True, False])
 def test_token_claims_carry_the_platform_admin_flag(monkeypatch, flag):
-    monkeypatch.setattr(auth_repo, "list_permission_names_for_role", lambda db, rid: [])
-    monkeypatch.setattr(
-        auth_repo, "get_role_with_permissions",
-        lambda db, rid: SimpleNamespace(name="admin", is_system=True),
-    )
+    monkeypatch.setattr(auth_repo, "get_role_claims", lambda db, rid: ("admin", True, []))
     employee = SimpleNamespace(
         id=1, organisation_id=10, role_id=3, unit_id=None, is_platform_admin=flag
     )

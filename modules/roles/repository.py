@@ -54,6 +54,13 @@ def update_role(db: Session, role: Role, *, data: dict) -> Role:
     return role
 
 
+def role_has_employees(db: Session, role_id: int) -> bool:
+    from modules.employees.model import Employee
+
+    stmt = select(Employee.id).where(Employee.role_id == role_id).limit(1)
+    return db.execute(stmt).first() is not None
+
+
 def delete_role(db: Session, role: Role) -> None:
     db.delete(role)
 
