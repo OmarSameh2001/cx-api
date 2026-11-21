@@ -398,6 +398,33 @@ def e2e_isolation(remove: bool):
         db.close()
 
 
+@cli.command("results:backfill")
+@click.option("--form-id", type=int, default=None, help="Only this form's submissions.")
+@click.option(
+    "--rescore", is_flag=True,
+    help="Also replace stored scores that today's grading rules work out differently.",
+)
+def results_backfill(form_id, rescore: bool):
+    """Write the answer rows and score breakdowns (E1.6) of every finished
+    submission from its stored answers. Safe to run again: each run rewrites
+    the same rows. Without --rescore, stored scores are never changed."""
+    from modules.submissions import service as submissions_service
+
+    db = SessionLocal()
+    try:
+        counts = submissions_service.rebuild_results(db, form_id=form_id, update_score=rescore)
+        done = counts["same"] + counts["changed"] + counts["differs"]
+        click.echo(f"{done} submission(s): {counts['same']} score unchanged, "
+                   f"{counts['changed']} rescored, {counts['differs']} kept a different stored score")
+        if counts["differs"]:
+            click.echo("  those have answer rows but no breakdown; run with --rescore to regrade them")
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @cli.command("shell")
 def shell():
     """Open a Python REPL with `db` session and models loaded."""

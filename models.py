@@ -11,6 +11,7 @@ from modules.notification_deliveries.model import *
 from modules.notification_rules.model import *
 from modules.organisations.model import *
 from modules.platform_configs.model import *
+from modules.results.model import *
 from modules.roles.model import *
 from modules.submissions.model import *
 from modules.subscriptions.model import *

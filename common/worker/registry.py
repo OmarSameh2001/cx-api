@@ -68,6 +68,15 @@ def cleanup_files() -> dict:
     return counts
 
 
+def rebuild_results(form_id: Optional[int] = None, update_score: bool = False) -> dict:
+    """Regrades finished submissions and rewrites their answer rows (E1.6).
+    Dispatch-only: after a scoring change, or `scripts.py results:backfill`."""
+    with SessionLocal() as db:
+        counts = submissions_service.rebuild_results(db, form_id=form_id, update_score=update_score)
+    logger.info("results rebuilt: {}", counts)
+    return counts
+
+
 def ping() -> str:
     """Smoke test: dispatch("jobs.ping") and watch the log."""
     logger.info("pong")
@@ -84,6 +93,7 @@ JOBS: dict[str, Job] = {
         Job("events.relay", relay_events, EventsEnv.EVENTS_RELAY_SECONDS),
         Job("events.purge", purge_old_events, EventsEnv.EVENTS_PURGE_SECONDS),
         Job("files.cleanup", cleanup_files, FilesEnv.FILES_CLEANUP_SECONDS),
+        Job("results.rebuild", rebuild_results),
         Job("jobs.ping", ping),
     )
 }

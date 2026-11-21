@@ -16,6 +16,7 @@ from modules.forms.route import router as forms_router
 from modules.jobs.route import router as jobs_router
 from modules.organisations.route import router as organisations_router
 from modules.public_api.route import router as public_router
+from modules.results.route import router as results_router
 from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
@@ -59,6 +60,7 @@ app.include_router(auth_router)
 app.include_router(employees_router)
 app.include_router(forms_router)
 app.include_router(submissions_router)
+app.include_router(results_router)
 app.include_router(assignments_router)
 app.include_router(roles_router)
 app.include_router(organisations_router)

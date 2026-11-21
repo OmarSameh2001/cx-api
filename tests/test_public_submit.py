@@ -56,9 +56,12 @@ def test_valid_submission_commits_customer_and_submission_once(client, db, publi
     res = submit(client, {"101": "A", "102": "it's physics"})
     assert res.status_code == 201
     assert res.json() == {"submission_id": res.json()["submission_id"]}  # nothing else
-    # the outbox events are committed with the data: submitted, and graded
-    # because the form has auto-graded questions
-    assert written(db) == (["Customer", "Submission", "OutboxEvent", "OutboxEvent"], 1)
+    # the answer rows and the outbox events are committed with the data:
+    # one row per answer, then submitted, and graded because the form has
+    # auto-graded questions
+    assert written(db) == (
+        ["Customer", "Submission", "SubmissionValue", "SubmissionValue", "OutboxEvent", "OutboxEvent"], 1
+    )
     events = [o for o in db.added if type(o).__name__ == "OutboxEvent"]
     assert [e.event_type for e in events] == ["submission.submitted", "submission.graded"]
     assert events[0].aggregate_id == events[0].payload["submission_id"] is not None
@@ -114,7 +117,8 @@ def test_returning_customer_with_new_details_is_accepted_and_not_overwritten(
 
     # the record keeps its first-contact details, phone included
     assert (stored.first_name, stored.last_name, stored.phone) == ("Ann", "Lee", None)
-    assert written(db) == (["Submission", "OutboxEvent", "OutboxEvent"], 1)  # no new customer
+    # no new customer
+    assert written(db) == (["Submission", "SubmissionValue", "OutboxEvent", "OutboxEvent"], 1)
     submission = db.added[0]
     assert submission.customer_id == 5
     assert submission.contact == {

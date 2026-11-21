@@ -13,6 +13,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -46,6 +47,10 @@ class Submission(Base):
     )
 
     score: Mapped[Optional[float]] = mapped_column(Float)
+    # how `score` was reached (E1.6): {"total", "sections": [{"id", "score",
+    # "weight"}], "questions": [{"field_id", "key", "score", "max"}]}, scores
+    # 0-100 and question points. Set on submit and on regrade.
+    scores: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     # Public submissions: the contact details exactly as given this time
     # ({email, first_name, last_name, phone}). The customer record keeps the

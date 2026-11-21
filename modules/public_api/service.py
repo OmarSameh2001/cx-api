@@ -15,9 +15,10 @@ from modules.submissions.answer_rules import validate_answer_values
 from modules.submissions.model import Submission
 from modules.submissions.service import (
     _prune_to_path,
-    _score,
     _validate_required,
     _visited_section_ids,
+    grade,
+    record_results,
 )
 
 from .dto import PublicCustomer, PublicSubmitRequest
@@ -103,7 +104,7 @@ def submit_public(
             status.HTTP_409_CONFLICT,
             f"You have already submitted this form the maximum allowed times ({form.max_attempts})",
         )
-    score = _score(form, answers, visited)
+    result = grade(form, answers, visited)
 
     submission = Submission(
         form_id=form.id,
@@ -115,10 +116,11 @@ def submit_public(
         status="submitted",
         attempt_number=used + 1,
         submitted_at=datetime.now(timezone.utc),
-        score=score,
     )
     db.add(submission)
-    db.flush()  # the event needs the id; both are committed together
+    db.flush()  # the event and the answer rows need the id; all are committed together
+    # no unit yet: a public link doesn't say which branch it's about (T2.5.1)
+    record_results(db, submission, form, result, unit_id=None)
     submissions_service.attach_answer_files(db, submission, files_used, form)
     submissions_service.emit_finalized_events(db, submission, form)
     db.commit()

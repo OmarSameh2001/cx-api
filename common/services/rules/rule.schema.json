@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cx-app/rule.schema.json",
+  "title": "Rule",
+  "description": "One rule format for scoring, show/hide logic, section routing, workflow conditions and dashboard measures. A rule is a literal, a list of rules, or an operation: an object with exactly one key, the operator, whose value is its argument list. A value that isn't a list is a single argument, so {\"var\": \"nps\"} means {\"var\": [\"nps\"]}. A malformed rule is rejected; a well-formed rule never fails on unexpected data: arithmetic on a non-number gives null, comparing different types is false, a missing variable is null. Truthiness: false, null, 0, \"\" and [] are false, everything else is true. Equality is strict and deep: 1 equals 1.0, but \"1\" is not 1 and true is not 1. Rules are at most 32 levels deep and 1000 parts in all.",
+  "$ref": "#/$defs/rule",
+  "$defs": {
+    "literal": { "type": ["null", "boolean", "number", "string"] },
+    "rule": {
+      "anyOf": [
+        { "$ref": "#/$defs/literal" },
+        { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+        { "$ref": "#/$defs/operation" }
+      ]
+    },
+    "single": {
+      "description": "One argument: a rule that isn't a list, or a list holding just that rule.",
+      "anyOf": [
+        { "$ref": "#/$defs/literal" },
+        { "$ref": "#/$defs/operation" },
+        { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/rule" } }
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "propertyNames": {
+        "enum": [
+          "var", "and", "or", "not", "if", "==", "!=", "<", "<=", ">", ">=",
+          "+", "-", "*", "/", "%", "abs", "round", "min", "max", "sum", "avg",
+          "in", "any_of", "all_of", "length", "empty", "lower", "days_between"
+        ]
+      },
+      "properties": {
+        "var": {
+          "x-arity": [1, 2],
+          "description": "Reads the data at a dotted path (\"answers.nps\", \"items.0\"); \"\" is the whole data. A second argument is the default when the value is missing or null.",
+          "anyOf": [
+            { "$ref": "#/$defs/single" },
+            { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/rule" } }
+          ]
+        },
+        "and": {
+          "x-arity": [1, null],
+          "description": "True when every argument is truthy. Stops at the first falsy one. Always true or false.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "or": {
+          "x-arity": [1, null],
+          "description": "True when any argument is truthy. Stops at the first truthy one. Always true or false.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "not": {
+          "x-arity": [1, 1],
+          "description": "True when the argument is falsy.",
+          "$ref": "#/$defs/single"
+        },
+        "if": {
+          "x-arity": [2, null],
+          "description": "[condition, then, condition, then, ..., else]: the value after the first truthy condition, else the last argument when the count is odd, else null.",
+          "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "==": {
+          "x-arity": [2, 2],
+          "description": "Strict, deep equality.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "!=": {
+          "x-arity": [2, 2],
+          "description": "Not strictly equal.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "<": {
+          "x-arity": [2, 3],
+          "description": "Less than, for two numbers or two strings (by code point, so ISO dates compare correctly). Three arguments test a < b < c. Different types: false.",
+          "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/rule" }
+        },
+        "<=": {
+          "x-arity": [2, 3],
+          "description": "Less than or equal; three arguments test a <= b <= c (a range).",
+          "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/rule" }
+        },
+        ">": {
+          "x-arity": [2, 2],
+          "description": "Greater than, for two numbers or two strings.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        ">=": {
+          "x-arity": [2, 2],
+          "description": "Greater than or equal, for two numbers or two strings.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "+": {
+          "x-arity": [1, null],
+          "description": "Sum of the arguments. Null if any isn't a number (strings are not converted).",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "-": {
+          "x-arity": [1, 2],
+          "description": "a - b, or -a with one argument. Null for non-numbers.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "*": {
+          "x-arity": [1, null],
+          "description": "Product of the arguments. Null for non-numbers.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "/": {
+          "x-arity": [2, 2],
+          "description": "a / b. Null when b is 0 or either isn't a number.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "%": {
+          "x-arity": [2, 2],
+          "description": "Remainder of a / b, with the sign of a. Null when b is 0.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "abs": {
+          "x-arity": [1, 1],
+          "description": "Absolute value.",
+          "$ref": "#/$defs/single"
+        },
+        "round": {
+          "x-arity": [1, 2],
+          "description": "Rounds half away from zero (2.5 to 3, -2.5 to -3) to 0–10 decimal places (default 0).",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "min": {
+          "x-arity": [1, null],
+          "description": "Smallest number. List arguments are spread out one level, so {\"min\": {\"var\": \"scores\"}} works. Null when there are none or any isn't a number.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "max": {
+          "x-arity": [1, null],
+          "description": "Largest number, with lists spread out like min.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "sum": {
+          "x-arity": [1, null],
+          "description": "Total of the numbers, with lists spread out like min. 0 when there are none.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "avg": {
+          "x-arity": [1, null],
+          "description": "Mean of the numbers, with lists spread out like min. Null when there are none.",
+          "anyOf": [{ "$ref": "#/$defs/single" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule" } }]
+        },
+        "in": {
+          "x-arity": [2, 2],
+          "description": "[needle, haystack]: text contains the needle (both strings), or a list holds a value equal to the needle.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "any_of": {
+          "x-arity": [2, 2],
+          "description": "[answer, options]: the answer (one value or a list, such as a multiple-choice answer) includes at least one of the options.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "all_of": {
+          "x-arity": [2, 2],
+          "description": "[answer, options]: the answer includes every one of the options. True for an empty option list.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        },
+        "length": {
+          "x-arity": [1, 1],
+          "description": "Characters in a string (code points) or items in a list; null for anything else.",
+          "$ref": "#/$defs/single"
+        },
+        "empty": {
+          "x-arity": [1, 1],
+          "description": "True for null, \"\", [] and {}: an unanswered question.",
+          "$ref": "#/$defs/single"
+        },
+        "lower": {
+          "x-arity": [1, 1],
+          "description": "The string in lower case; null for non-strings.",
+          "$ref": "#/$defs/single"
+        },
+        "days_between": {
+          "x-arity": [2, 2],
+          "description": "[from, to]: whole days from one date to the other (negative when to is earlier). Each is an ISO date, YYYY-MM-DD, or a timestamp starting with one. Null for anything else.",
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/rule" }
+        }
+      }
+    }
+  }
+}

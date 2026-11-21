@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -11,6 +12,7 @@ from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form, FormField
 from modules.forms.service import as_answered, branch_key, ordered_sections, published
+from modules.results import service as results_service
 
 from . import repository
 from .answer_rules import validate_answer_values
@@ -227,26 +229,55 @@ def _validate_required(
             )
 
 
-def _score(
+@dataclass
+class Grade:
+    """A submission's score and how it was reached (E1.6)."""
+    total: float  # 0–100
+    # sections on the path that have graded questions: {"id", "score" 0–100, "weight"}
+    sections: list[dict[str, Any]] = dataclass_field(default_factory=list)
+    # graded questions that count (weight above 0, on the path): field id -> (earned, possible)
+    questions: dict[int, tuple[float, float]] = dataclass_field(default_factory=dict)
+
+    def as_json(self, form: Form) -> dict[str, Any]:
+        keys = {f.id: f.key for f in form.fields}
+        return {
+            "total": self.total,
+            "sections": self.sections,
+            "questions": [
+                {"field_id": fid, "key": keys.get(fid), "score": earned, "max": possible}
+                for fid, (earned, possible) in self.questions.items()
+            ],
+        }
+
+
+def _earned(field: FormField, answers: dict[str, Any], questions: dict) -> float:
+    # questions worth nothing aren't graded: they can't change the score,
+    # and grading a text answer runs the similarity model
+    if not field.score_weight:
+        return 0.0
+    earned = field.score_weight * _correctness_fraction(field, answers.get(str(field.id)))
+    questions[field.id] = (earned, field.score_weight)
+    return earned
+
+
+def grade(
     form: Form, answers: dict[str, Any], visited: Optional[set[int]] = None
-) -> float:
+) -> Grade:
+    questions: dict[int, tuple[float, float]] = {}
     if not form.sections:
         total_possible = sum(f.score_weight for f in form.fields if f.type in AUTO_GRADABLE)
         if not total_possible:
-            return 0.0
+            return Grade(total=0.0)
         earned = sum(
-            f.score_weight * _correctness_fraction(f, answers.get(str(f.id)))
-            for f in form.fields
-            if f.type in AUTO_GRADABLE
+            _earned(f, answers, questions) for f in form.fields if f.type in AUTO_GRADABLE
         )
-        return (earned / total_possible) * 100
+        return Grade(total=(earned / total_possible) * 100, questions=questions)
 
     # Section-weighted scoring — returns 0–100, over the sections on the path
     gradable_by_section: dict[int, list[FormField]] = {}
-    for field in form.fields:
-        if field.type in AUTO_GRADABLE:
-            sid = field.section_id
-            gradable_by_section.setdefault(sid, []).append(field)
+    for f in form.fields:
+        if f.type in AUTO_GRADABLE:
+            gradable_by_section.setdefault(f.section_id, []).append(f)
     # only sections with something to grade share the weight, so a section
     # without graded questions can't cap the score below 100
     sections = [
@@ -257,17 +288,77 @@ def _score(
     ]
     total_sw = sum(s.get("score_weight", 1.0) for s in sections)
     if not total_sw:
-        return 0.0
+        return Grade(total=0.0)
     score = 0.0
+    breakdown: list[dict[str, Any]] = []
     for section in sections:
         fields = gradable_by_section[section["id"]]
         total_fw = sum(f.score_weight for f in fields)
-        earned = sum(
-            f.score_weight * _correctness_fraction(f, answers.get(str(f.id)))
-            for f in fields
-        )
-        score += (section.get("score_weight", 1.0) / total_sw) * (earned / total_fw) * 100
-    return score
+        earned = sum(_earned(f, answers, questions) for f in fields)
+        weight = section.get("score_weight", 1.0)
+        score += (weight / total_sw) * (earned / total_fw) * 100
+        breakdown.append({"id": section["id"], "score": (earned / total_fw) * 100, "weight": weight})
+    return Grade(total=score, sections=breakdown, questions=questions)
+
+
+def _score(
+    form: Form, answers: dict[str, Any], visited: Optional[set[int]] = None
+) -> float:
+    return grade(form, answers, visited).total
+
+
+def _unit_of(principal: Optional[Principal]) -> Optional[int]:
+    """The unit a signed-in employee's answers count under (see SubmissionValue)."""
+    return principal.unit_id if isinstance(principal, EmployeePrincipal) else None
+
+
+def record_results(
+    db: Session, submission: Submission, form: Form, result: Grade, *, unit_id: Optional[int]
+) -> None:
+    """Score, breakdown and one row per answer for a submission just
+    finalized. The submission needs its id. No commit."""
+    submission.score = result.total
+    submission.scores = result.as_json(form)
+    results_service.add_values(db, submission, form, result.questions, unit_id=unit_id)
+
+
+def regrade_submission(db: Session, submission: Submission, *, update_score: bool) -> str:
+    """Grades a finished submission again from its stored answers, against
+    the version it answered, and rewrites its answer rows. No commit.
+
+    With update_score=False the stored score is kept: when the grade comes
+    out different (older submissions were scored by older rules) the
+    breakdown is left unset rather than contradict the score. Returns
+    "same", "changed" (score updated) or "differs" (kept)."""
+    form = as_answered(submission)
+    answers = submission.answers or {}
+    result = grade(form, answers, _visited_section_ids(form, answers))
+    unit_id = submission.employee.unit_id if submission.employee is not None else None
+    results_service.replace_values(db, submission, form, result.questions, unit_id=unit_id)
+    same = submission.score is not None and abs(submission.score - result.total) < 1e-9
+    if same or update_score:
+        submission.score = result.total
+        submission.scores = result.as_json(form)
+        return "same" if same else "changed"
+    submission.scores = None
+    return "differs"
+
+
+def rebuild_results(
+    db: Session, *, form_id: Optional[int] = None, update_score: bool = False, batch_size: int = 200
+) -> dict[str, int]:
+    """Regrades every finished submission (of one form, or all), committing
+    each batch. Safe to run again: each run rewrites the same rows."""
+    counts = {"same": 0, "changed": 0, "differs": 0}
+    after = 0
+    while True:
+        batch = repository.finalized_after(db, after_id=after, form_id=form_id, limit=batch_size)
+        if not batch:
+            return counts
+        for submission in batch:
+            counts[regrade_submission(db, submission, update_score=update_score)] += 1
+        after = batch[-1].id
+        db.commit()
 
 
 def _ensure_submitter_allowed(form: Form, principal_type: str) -> None:
@@ -517,7 +608,8 @@ def submit_submission(
     is_late = bool(submission.expires_at and now > submission.expires_at)
     submission.status = "late" if is_late else "submitted"
     submission.submitted_at = now
-    submission.score = _score(form, final_answers, visited)
+    record_results(db, submission, form, grade(form, final_answers, visited),
+                   unit_id=_unit_of(principal))
     emit_finalized_events(db, submission, form)
     return repository.save(db, submission)
 
@@ -706,6 +798,7 @@ def serialize_detail(
         # personal details: for the form's reviewers only
         contact=submission.contact if is_reviewer else None,
         answers=answers,
+        scores=submission.scores if revealed else None,
         fields=fields,
     )
 

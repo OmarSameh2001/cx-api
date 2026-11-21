@@ -69,6 +69,9 @@ class SubmissionDetail(SubmissionRead):
     # public submissions: the contact details as given with this submission
     contact: Optional[SubmissionContact] = None
     answers: Optional[dict[str, Any]] = None
+    # how the score was reached: section scores and points per question
+    # (reveal-gated like the score)
+    scores: Optional[dict[str, Any]] = None
     fields: list[SubmissionDetailField] = []
 
 
