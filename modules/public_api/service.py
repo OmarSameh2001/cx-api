@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from modules.customers import repository as customers_repository
 from modules.customers.model import Customer
 from modules.forms import repository as forms_repository
-from modules.forms.model import Form
+from modules.forms.model import Form, PublishedForm
+from modules.forms.service import published
 from modules.submissions import repository as submissions_repository
 from modules.files.service import PublicActor
 from modules.submissions import service as submissions_service
@@ -22,7 +23,9 @@ from modules.submissions.service import (
 from .dto import PublicCustomer, PublicSubmitRequest
 
 
-def _get_form_for_public(db: Session, token: str) -> Form:
+def _get_form_for_public(db: Session, token: str) -> PublishedForm:
+    """The form behind a public link, as its current version: respondents
+    always answer what was last published, never the draft."""
     form = forms_repository.get_form_by_token(db, token)
     if form is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
@@ -36,10 +39,13 @@ def _get_form_for_public(db: Session, token: str) -> Form:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "This form does not accept customer submissions"
         )
-    return form
+    view = published(form)
+    if view is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Form is not accepting submissions")
+    return view
 
 
-def get_public_form(db: Session, token: str) -> Form:
+def get_public_form(db: Session, token: str) -> PublishedForm:
     return _get_form_for_public(db, token)
 
 
@@ -101,6 +107,7 @@ def submit_public(
 
     submission = Submission(
         form_id=form.id,
+        form_version_id=form.version_id,
         customer_id=customer.id,
         user_id=None,
         contact=_contact(payload.customer),

@@ -10,7 +10,7 @@ from modules.events import service as events
 from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
 from modules.forms.model import Form, FormField
-from modules.forms.service import branch_key, ordered_sections
+from modules.forms.service import as_answered, branch_key, ordered_sections, published
 
 from . import repository
 from .answer_rules import validate_answer_values
@@ -385,7 +385,7 @@ def get_respondent_form(
     if _check_and_apply_expiry(db, submission):
         raise HTTPException(status.HTTP_409_CONFLICT, "Submission has expired")
     _ensure_in_progress(submission)
-    return submission.form
+    return as_answered(submission)
 
 
 def _ensure_attempt_quota(
@@ -413,6 +413,8 @@ def start_submission(
 
     _ensure_submitter_allowed(form, principal.principal)
     _ensure_user_can_access_form(form, principal)
+    if published(form) is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Form has not been published yet")
 
     user_id, customer_id = _principal_ids(principal)
 
@@ -424,6 +426,7 @@ def start_submission(
         if _check_and_apply_expiry(db, open_sub):
             open_sub = None
         else:
+            # an attempt started before a publish carries on with its version
             return open_sub
 
     attempt_number = _ensure_attempt_quota(db, form, principal)
@@ -439,6 +442,7 @@ def start_submission(
         customer_id=customer_id,
         expires_at=expires_at,
         attempt_number=attempt_number,
+        form_version_id=form.current_version_id,
     )
 
 
@@ -458,15 +462,16 @@ def save_draft(
             status.HTTP_409_CONFLICT, "Submission has expired; draft cannot be saved"
         )
     _ensure_in_progress(submission)
-    # merge answers (partial allowed); only the form's own questions are kept,
-    # with values bounded by type and size
-    known = {str(f.id) for f in submission.form.fields}
+    # merge answers (partial allowed); only the version's own questions are
+    # kept, with values bounded by type and size
+    form = as_answered(submission)
+    known = {str(f.id) for f in form.fields}
     incoming = {k: v for k, v in (answers or {}).items() if k in known}
-    validate_answer_values(submission.form, incoming, draft=True)
+    validate_answer_values(form, incoming, draft=True)
     merged = dict(submission.answers or {})
     merged.update(incoming)
-    merged, used = resolve_file_answers(db, submission.form, merged, actor=principal, submission_id=submission.id)
-    attach_answer_files(db, submission, used, submission.form)
+    merged, used = resolve_file_answers(db, form, merged, actor=principal, submission_id=submission.id)
+    attach_answer_files(db, submission, used, form)
     submission.answers = merged
     return repository.save(db, submission)
 
@@ -493,7 +498,7 @@ def submit_submission(
         merged.update(answers)
         submission.answers = merged
 
-    form = submission.form
+    form = as_answered(submission)
     answers = submission.answers or {}
     visited = _visited_section_ids(form, answers)
     final_answers = _prune_to_path(form, answers, visited)
@@ -641,8 +646,9 @@ def reveal_submission(
 def serialize_detail(
     submission: Submission, *, principal: Principal
 ) -> SubmissionDetail:
-    """Serialize a submission for the detail endpoint, reveal-gating sensitive bits."""
-    form = submission.form
+    """Serialize a submission for the detail endpoint, reveal-gating sensitive bits.
+    Questions come from the version answered, not the form as it is now."""
+    form = as_answered(submission) if submission.form is not None else None
 
     is_owner = False
     if principal.principal == "employee" and submission.user_id == principal.id:

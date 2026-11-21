@@ -16,6 +16,9 @@ from .dto import (
     FormRead,
     FormSummary,
     FormUpdate,
+    FormVersionDiff,
+    FormVersionRead,
+    FormVersionSummary,
 )
 
 
@@ -164,3 +167,58 @@ def delete_form(
 ):
     controller.delete_form(db, form_id, employee)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- versions (E1.5) ---------------------------------------------------------
+
+
+@router.post("/{form_id}/publish", response_model=FormRead)
+def publish_form(
+    form_id: int,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    """Publishes the draft as the next version (409 nothing_to_publish when
+    it matches the current one). Activating a form publishes it too."""
+    return controller.publish_form(db, form_id, employee)
+
+
+@router.get("/{form_id}/versions", response_model=list[FormVersionSummary])
+def list_versions(
+    form_id: int,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.list_versions(db, form_id, employee)
+
+
+@router.get("/{form_id}/versions/{number}", response_model=FormVersionRead)
+def get_version(
+    form_id: int,
+    number: int,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.get_version(db, form_id, number, employee)
+
+
+@router.get("/{form_id}/versions/{number}/diff", response_model=FormVersionDiff)
+def diff_version(
+    form_id: int,
+    number: int,
+    against: Optional[str] = Query(default=None, description='a version number, or "draft"; default: the previous version'),
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.diff_version(db, form_id, number, against, employee)
+
+
+@router.post("/{form_id}/versions/{number}/restore", response_model=FormRead)
+def restore_version(
+    form_id: int,
+    number: int,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    """Makes the draft match this version; publish to make it live again."""
+    return controller.restore_version(db, form_id, number, employee)

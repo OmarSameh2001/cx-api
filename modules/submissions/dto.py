@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from modules.forms.dto import SectionTarget
+from modules.forms.dto import SectionTarget, respondent_config
 
 
 SubmissionStatusT = Literal["in_progress", "submitted", "late", "expired"]
@@ -25,6 +25,8 @@ class SubmissionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     form_id: int
+    # the published version answered
+    form_version_id: Optional[int] = None
     status: SubmissionStatusT
     started_at: datetime
     expires_at: Optional[datetime]
@@ -82,6 +84,12 @@ class RespondentField(BaseModel):
     is_required: bool
     section_id: Optional[int] = None
     branching: Optional[dict[str, SectionTarget]] = None
+    config: Optional[dict[str, Any]] = None
+
+    @field_validator("config")
+    @classmethod
+    def _declared_keys_only(cls, v, info):
+        return respondent_config(info.data.get("type"), v)
 
 
 class RespondentSection(BaseModel):

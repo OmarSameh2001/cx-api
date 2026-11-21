@@ -17,6 +17,7 @@ def get_submission(db: Session, submission_id: int) -> Optional[Submission]:
         .where(Submission.id == submission_id)
         .options(
             selectinload(Submission.form).selectinload(Form.fields),
+            selectinload(Submission.form_version),
             selectinload(Submission.employee),
             selectinload(Submission.customer),
         )
@@ -94,6 +95,7 @@ def list_submissions(
         select(Submission)
         .options(
             selectinload(Submission.form).selectinload(Form.fields),
+            selectinload(Submission.form_version),
             selectinload(Submission.employee),
             selectinload(Submission.customer),
         )
@@ -162,7 +164,10 @@ def find_open_submission(
 ) -> Optional[Submission]:
     stmt = (
         select(Submission)
-        .options(selectinload(Submission.form).selectinload(Form.fields))
+        .options(
+            selectinload(Submission.form).selectinload(Form.fields),
+            selectinload(Submission.form_version),
+        )
         .where(
             Submission.form_id == form_id,
             Submission.status == "in_progress",
@@ -185,9 +190,11 @@ def create_submission(
     user_id: Optional[int],
     expires_at: Optional[datetime],
     attempt_number: int,
+    form_version_id: Optional[int] = None,
 ) -> Submission:
     submission = Submission(
         form_id=form_id,
+        form_version_id=form_version_id,
         answers={},
         customer_id=customer_id,
         user_id=user_id,

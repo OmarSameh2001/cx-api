@@ -18,7 +18,7 @@ from modules.files import service as files
 from modules.files.model import FileLimit, StoredFile
 from modules.files.purposes import MB, intersect_types, type_allowed
 from modules.forms import repository as forms_repo
-from tests.conftest import employee_token, make_form
+from tests.conftest import employee_token, make_form, republish
 
 
 # --- fakes ---------------------------------------------------------------------
@@ -100,6 +100,7 @@ def file_form(monkeypatch):
     form = make_form(type="questionnaire", organisation_id=1)
     form.fields[0].type = "file"
     form.fields[0].options = []
+    republish(form)
     monkeypatch.setattr(forms_repo, "get_form", lambda db, fid: form if fid == form.id else None)
     return form
 
@@ -202,6 +203,7 @@ def test_upload_complete_flow(db, store, storage, file_form):
 def test_upload_limits_are_checked_before_and_after(db, store, storage, file_form):
     actor = employee()
     file_form.fields[0].options = ["max_mb=1"]
+    republish(file_form)  # limits apply to respondents once published
     kw = dict(actor=actor, purpose="form_answer", form_id=file_form.id, field_id=file_form.fields[0].id)
     with pytest.raises(HTTPException) as e:
         files.add(db, name="big.pdf", content_type="application/pdf", size=2 * MB, **kw)

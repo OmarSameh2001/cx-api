@@ -89,12 +89,17 @@ def test_submitted_answers_cannot_be_edited_as_a_draft(client, db, questionnaire
     assert res.status_code == 409 and db.commits == 0
 
 
-def test_form_structure_is_locked_once_it_has_responses(client, db, questionnaire):
-    questionnaire.is_active = False
+def test_structure_changes_with_responses_go_into_the_draft(client, db, questionnaire):
+    # responses no longer lock the structure (E1.5): the edit changes the
+    # draft, and respondents keep version 1 until it is published
+    published_fields = questionnaire.current_version.snapshot["fields"]
     res = client.patch(f"/forms/{questionnaire.id}", headers=employee_token(id=1), json={
         "fields": [{"question": "brand new", "type": "text"}],
     })
-    assert res.status_code == 409 and db.commits == 0
+    assert res.status_code == 200, res.text
+    assert [f.question for f in questionnaire.fields] == ["brand new"]
+    assert questionnaire.current_version.snapshot["fields"] == published_fields
+    assert res.json()["has_unpublished_changes"] is True
 
 
 def test_form_with_responses_cannot_be_deleted(client, db, questionnaire):
@@ -102,8 +107,13 @@ def test_form_with_responses_cannot_be_deleted(client, db, questionnaire):
     assert client.delete(f"/forms/{questionnaire.id}", headers=employee_token(id=1)).status_code == 409
 
 
-def test_active_form_cannot_be_edited(client, db, questionnaire):
-    assert client.patch(f"/forms/{questionnaire.id}", headers=employee_token(id=1), json={"name": "x"}).status_code == 409
+def test_active_form_draft_can_be_edited(client, db, questionnaire):
+    assert client.patch(f"/forms/{questionnaire.id}", headers=employee_token(id=1), json={"name": "x"}).status_code == 200
+
+
+def test_published_form_cannot_change_type(client, db, questionnaire):
+    res = client.patch(f"/forms/{questionnaire.id}", headers=employee_token(id=1), json={"type": "exam"})
+    assert res.status_code == 409 and res.json()["error"] == "form_type_locked"
 
 
 def test_respondent_cannot_start_a_second_attempt_beyond_the_limit(client, db, questionnaire, monkeypatch):

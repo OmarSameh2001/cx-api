@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from modules.files.dto import LimitWrite
 
 
 FieldType = Literal[
@@ -27,6 +29,117 @@ MAX_OPTION_LENGTH = 255
 SectionTarget = Union[int, Literal["end"]]
 
 
+# --- question config (T1.4.1) ------------------------------------------------
+# form_fields.config holds what a question type needs beyond its options. Each
+# type has one schema; a key it doesn't declare is rejected. Respondents are
+# served the config, so nothing secret (answer keys, scoring) belongs in it.
+
+
+class NoConfig(BaseModel):
+    """For types with nothing to configure yet."""
+    model_config = ConfigDict(extra="forbid")
+
+
+class FileQuestionConfig(LimitWrite):
+    """Limits for this question's uploads. Like an organisation's limits they
+    can only tighten size and types; image settings override."""
+    model_config = ConfigDict(extra="forbid")
+
+
+QUESTION_CONFIG_SCHEMAS: dict[str, type[BaseModel]] = {
+    "single_choice": NoConfig,
+    "multi_choice": NoConfig,
+    "boolean": NoConfig,
+    "text": NoConfig,
+    "date": NoConfig,
+    "phone_number": NoConfig,
+    "email": NoConfig,
+    "file": FileQuestionConfig,
+    "scale": NoConfig,
+}
+
+
+def _error_text(exc: ValidationError) -> str:
+    return "; ".join(
+        f"{'.'.join(str(p) for p in e['loc']) or 'config'}: {e['msg']}" for e in exc.errors()
+    )
+
+
+def validate_question_config(field_type: str, config: Optional[dict]) -> Optional[dict]:
+    """The config as stored: validated, unset keys dropped, None when empty."""
+    if not config:
+        return None
+    try:
+        parsed = QUESTION_CONFIG_SCHEMAS[field_type].model_validate(config)
+    except ValidationError as exc:
+        raise ValueError(f"invalid config for a {field_type} question: {_error_text(exc)}") from None
+    data = {k: v for k, v in parsed.model_dump(exclude_none=True).items() if v != {}}
+    return data or None
+
+
+def respondent_config(field_type: Any, config: Any) -> Optional[dict]:
+    """A stored config as respondents get it: only the keys the type's schema
+    declares, so nothing written around the schema (by hand, or by an older
+    version) is served to them."""
+    schema = QUESTION_CONFIG_SCHEMAS.get(field_type)
+    if schema is None or not isinstance(config, dict):
+        return None
+    return {k: v for k, v in config.items() if k in schema.model_fields} or None
+
+
+# --- form settings (T1.4.2) --------------------------------------------------
+
+
+class FormSettings(BaseModel):
+    """How a form behaves, stored in forms.settings. A new setting needs a
+    default here and no migration: rows without it read the default."""
+    model_config = ConfigDict(extra="forbid")
+    # exams only: the attempt expires this long after it starts
+    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
+    # None: unlimited
+    max_attempts: Optional[int] = Field(default=None, ge=1)
+    results_revealed: bool = False
+
+
+class FormSettingsRead(FormSettings):
+    # serve what is stored, even a key this version no longer knows
+    model_config = ConfigDict(extra="ignore")
+
+
+class FormSettingsPatch(BaseModel):
+    """FormUpdate's settings: keys sent replace the stored ones, the rest stay."""
+    model_config = ConfigDict(extra="forbid")
+    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
+    max_attempts: Optional[int] = Field(default=None, ge=1)
+    results_revealed: bool = False
+
+
+# Before `settings`, these were top-level form attributes. They're still
+# accepted there and still served there, until the frontend uses `settings`.
+LEGACY_SETTING_KEYS = ("time_limit_minutes", "max_attempts", "results_revealed")
+
+
+def _fold_legacy_settings(data: Any) -> Any:
+    """Moves top-level legacy settings into `settings`; a key sent in both
+    places takes the `settings` value."""
+    if not isinstance(data, dict) or not any(k in data for k in LEGACY_SETTING_KEYS):
+        return data
+    data = dict(data)
+    settings = data.get("settings")
+    if settings is not None and not isinstance(settings, dict):
+        return data  # let the settings field report the bad type
+    settings = dict(settings or {})
+    for key in LEGACY_SETTING_KEYS:
+        if key not in data:
+            continue
+        value = data.pop(key)
+        if key == "results_revealed" and value is None:
+            continue  # null used to mean "leave it as it is"
+        settings.setdefault(key, value)
+    data["settings"] = settings
+    return data
+
+
 class FormSectionPayload(BaseModel):
     id: int
     title: str = Field(min_length=1, max_length=255)
@@ -50,14 +163,26 @@ class FormFieldBase(BaseModel):
     section_id: Optional[int] = None
     # answer -> section to jump to; only for single_choice / boolean
     branching: Optional[dict[str, SectionTarget]] = None
+    # per-type settings; see QUESTION_CONFIG_SCHEMAS
+    config: Optional[dict[str, Any]] = None
 
 
 class FormFieldCreate(FormFieldBase):
-    # on update: existing field id to edit in place; omit for a new field
+    # on update: existing field id to edit in place; omit for a new field.
+    # An existing field sent without `config` keeps the config it has.
     id: Optional[int] = None
 
     # The rules below run on writes only. FormFieldRead serves what is stored,
     # so a row that predates a rule (or was fixed by hand) can't break reads.
+
+    @field_validator("config")
+    @classmethod
+    def _validate_config(cls, v, info):
+        type_ = info.data.get("type")
+        if type_ is None:
+            # type already failed validation; that error is the useful one
+            return v
+        return validate_question_config(type_, v)
 
     @field_validator("branching")
     @classmethod
@@ -123,6 +248,8 @@ class FormFieldCreate(FormFieldBase):
 class FormFieldRead(FormFieldBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    # stable across versions (see FormField.key); set by the server
+    key: Optional[str] = None
 
 
 class FormBase(BaseModel):
@@ -132,9 +259,6 @@ class FormBase(BaseModel):
     description: Optional[str] = None
     submitter_type: list[SubmitterType] = Field(min_length=1)
     assigned_to_units: Optional[list[int]] = None
-    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
-    max_attempts: Optional[int] = Field(default=None, ge=1)
-    results_revealed: bool = False
 
     @field_validator("submitter_type")
     @classmethod
@@ -150,8 +274,16 @@ class FormBase(BaseModel):
 
 
 class FormCreate(FormBase):
+    settings: FormSettings = Field(default_factory=FormSettings)
     fields: list[FormFieldCreate] = Field(min_length=1)
     sections: Optional[list[FormSectionPayload]] = None
+    # Deprecated: legacy input, folded into `settings`. Also served as copies
+    # of settings, because the AI generator returns this payload to the builder.
+    time_limit_minutes: Optional[int] = None
+    max_attempts: Optional[int] = None
+    results_revealed: bool = False
+
+    _fold_legacy = model_validator(mode="before")(_fold_legacy_settings)
 
     @model_validator(mode="after")
     def _validate_constraints(self):
@@ -172,8 +304,10 @@ class FormCreate(FormBase):
                 for f in self.fields
             ):
                 raise ValueError("exam forms must contain at least one auto-gradable field")
-            if self.max_attempts is None:
-                self.max_attempts = 1
+            if self.settings.max_attempts is None:
+                self.settings.max_attempts = 1
+        for key in LEGACY_SETTING_KEYS:
+            setattr(self, key, getattr(self.settings, key))
         return self
 
 
@@ -184,13 +318,15 @@ class FormUpdate(BaseModel):
     description: Optional[str] = None
     submitter_type: Optional[list[SubmitterType]] = None
     assigned_to_units: Optional[list[int]] = None
-    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
-    max_attempts: Optional[int] = Field(default=None, ge=1)
-    results_revealed: Optional[bool] = None
+    # top-level time_limit_minutes, max_attempts and results_revealed are
+    # still accepted and land here
+    settings: Optional[FormSettingsPatch] = None
     is_active: Optional[bool] = None
     is_archived: Optional[bool] = None
     fields: Optional[list[FormFieldCreate]] = None
     sections: Optional[list[FormSectionPayload]] = None
+
+    _fold_legacy = model_validator(mode="before")(_fold_legacy_settings)
 
     @model_validator(mode="after")
     def _validate_sections(self):
@@ -207,9 +343,24 @@ class FormUpdate(BaseModel):
         return self
 
 
-class FormRead(FormBase):
+class FormVersionRef(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    number: int
+    published_at: datetime
+    published_by: Optional[int] = None
+
+
+class FormRead(FormBase):
+    """The form as its editors see it: `fields` and `sections` are the draft.
+    Respondents get `current_version` until the draft is published."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    settings: FormSettingsRead = Field(default_factory=FormSettingsRead)
+    # Deprecated copies of settings.*, until the frontend reads `settings`
+    time_limit_minutes: Optional[int] = None
+    max_attempts: Optional[int] = None
+    results_revealed: bool = False
     is_active: bool
     is_archived: bool
     public_token: Optional[str] = None
@@ -217,9 +368,13 @@ class FormRead(FormBase):
     created_by: Optional[int]
     fields: list[FormFieldRead] = []
     sections: Optional[list[dict]] = None
-    # a response has been submitted (drafts don't count): structure is
-    # locked, only wording can be changed. Filled in by the controller.
+    # a response has been submitted (drafts don't count). Filled in by the
+    # controller. Edits no longer lock: they go into the next version.
     has_submissions: bool = False
+    current_version: Optional[FormVersionRef] = None
+    # the draft differs from current_version (or nothing is published yet);
+    # filled in by the controller
+    has_unpublished_changes: bool = False
 
 
 class FormSummary(BaseModel):
@@ -236,6 +391,7 @@ class FormSummary(BaseModel):
     results_revealed: bool = False
     created_at: datetime
     created_by: Optional[int]
+    current_version_id: Optional[int] = None
 
 
 MyStatus = Literal["not_started", "in_progress", "submitted", "late", "expired"]
@@ -244,3 +400,48 @@ MyStatus = Literal["not_started", "in_progress", "submitted", "late", "expired"]
 class AssignedFormSummary(FormSummary):
     my_status: MyStatus = "not_started"
     attempts_used: int = 0
+
+
+# --- versions (E1.5) ---------------------------------------------------------
+
+
+class FormVersionSummary(FormVersionRef):
+    question_count: int = 0
+    # finalized responses to this version
+    submission_count: int = 0
+
+
+class FormVersionRead(FormVersionRef):
+    type: str
+    sections: Optional[list[dict]] = None
+    fields: list[FormFieldRead] = []
+
+
+class DiffItem(BaseModel):
+    # questions: their key; sections: their id
+    ref: Union[str, int]
+    label: str
+    # attribute names that differ; values are in the two versions
+    changes: list[str] = []
+
+
+class DiffPart(BaseModel):
+    added: list[DiffItem] = []
+    removed: list[DiffItem] = []
+    changed: list[DiffItem] = []
+
+
+class FormVersionDiff(BaseModel):
+    # None: the empty form before version 1
+    from_number: Optional[int]
+    # a version number, or "draft"
+    to: Union[int, Literal["draft"]]
+    questions: DiffPart
+    sections: DiffPart
+
+    @property
+    def is_empty(self) -> bool:
+        return not any(
+            getattr(part, kind) for part in (self.questions, self.sections)
+            for kind in ("added", "removed", "changed")
+        )

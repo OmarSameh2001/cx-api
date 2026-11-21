@@ -1,8 +1,9 @@
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from modules.forms.dto import SectionTarget
+from modules.forms.dto import SectionTarget, respondent_config
+from modules.submissions.dto import RespondentSection
 
 
 class PublicCustomer(BaseModel):
@@ -29,6 +30,12 @@ class PublicFormField(BaseModel):
     is_required: bool
     section_id: Optional[int] = None
     branching: Optional[dict[str, SectionTarget]] = None
+    config: Optional[dict[str, Any]] = None
+
+    @field_validator("config")
+    @classmethod
+    def _declared_keys_only(cls, v, info):
+        return respondent_config(info.data.get("type"), v)
 
 
 class PublicForm(BaseModel):
@@ -38,7 +45,8 @@ class PublicForm(BaseModel):
     description: Optional[str] = None
     type: str
     fields: list[PublicFormField] = []
-    sections: Optional[list[dict]] = None
+    # typed, so stored-only keys (score weights) never reach the public
+    sections: Optional[list[RespondentSection]] = None
 
 
 class PublicSubmitResponse(BaseModel):

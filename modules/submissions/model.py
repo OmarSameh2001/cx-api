@@ -20,7 +20,7 @@ from db import Base
 if TYPE_CHECKING:
     from ..customers.model import Customer
     from ..employees.model import Employee
-    from ..forms.model import Form
+    from ..forms.model import Form, FormVersion
 
 
 SubmissionStatus = ("in_progress", "submitted", "late", "expired")
@@ -55,10 +55,16 @@ class Submission(Base):
     customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), index=True)
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"), index=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)
+    # the published version answered; answers are checked, scored and shown
+    # against its questions, whatever the form looks like now
+    form_version_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("form_versions.id"), index=True
+    )
 
     customer: Mapped[Optional["Customer"]] = relationship(back_populates="submissions")
     employee: Mapped[Optional["Employee"]] = relationship(back_populates="submissions")
     form: Mapped["Form"] = relationship(back_populates="submissions")
+    form_version: Mapped[Optional["FormVersion"]] = relationship(foreign_keys=[form_version_id])
 
     __table_args__ = (
         Index("ix_submissions_form_user_status", "form_id", "user_id", "status"),

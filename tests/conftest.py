@@ -21,7 +21,7 @@ import main
 from common.rate_limit import limiter
 from db import get_db
 from modules.auth.service import _encode_access_token
-from modules.forms.model import Form, FormField
+from modules.forms.model import Form, FormField, FormVersion
 from modules.submissions.model import Submission
 
 
@@ -54,6 +54,9 @@ class FakeSession:
 
     def refresh(self, obj):
         self._assign_id(obj)
+        # rows added to a relationship get their ids at flush, like children
+        for child in getattr(obj, "fields", None) or []:
+            self._assign_id(child)
 
     def delete(self, obj):
         self.deleted.append(obj)
@@ -124,9 +127,10 @@ def customer_token(id=50) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def make_form(**overrides) -> Form:
+def make_form(published: bool = True, **overrides) -> Form:
     """An exam in org 10 created by employee 1, with sections, graded
-    questions and a correct answer on each."""
+    questions and a correct answer on each, published as version 1 (as an
+    active form always is)."""
     data = dict(
         id=7,
         name="Safety exam",
@@ -152,17 +156,33 @@ def make_form(**overrides) -> Form:
     form = Form(**data)
     form.fields = [
         FormField(
-            id=101, question="Pick A", type="single_choice", options=["A", "B"],
+            id=101, key="k101", question="Pick A", type="single_choice", options=["A", "B"],
             right_answer="A", order=0, help_text=None, is_required=True,
             score_weight=1.0, section_id=1, branching=None,
         ),
         FormField(
-            id=102, question="Explain", type="text", options=None,
+            id=102, key="k102", question="Explain", type="text", options=None,
             right_answer="Because of physics", order=1, help_text=None,
             is_required=False, score_weight=1.0, section_id=2, branching=None,
         ),
     ]
+    if published:
+        republish(form)
     return form
+
+
+def republish(form: Form) -> FormVersion:
+    """Publishes the form's draft as its next version, as /publish would."""
+    from modules.forms.service import snapshot_of
+
+    number = form.current_version.number + 1 if form.current_version is not None else 1
+    version = FormVersion(
+        id=form.id * 100 + number, form_id=form.id, number=number, snapshot=snapshot_of(form),
+        published_at=datetime(2026, 1, 1, tzinfo=timezone.utc), published_by=form.created_by,
+    )
+    form.current_version = version
+    form.current_version_id = version.id
+    return version
 
 
 def make_submission(form: Form, **overrides) -> Submission:
@@ -175,4 +195,7 @@ def make_submission(form: Form, **overrides) -> Submission:
     data.update(overrides)
     submission = Submission(**data)
     submission.form = form
+    if "form_version" not in overrides:
+        submission.form_version = form.current_version
+        submission.form_version_id = form.current_version_id
     return submission

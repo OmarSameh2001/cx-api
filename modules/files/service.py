@@ -151,8 +151,9 @@ _BOOL = {"true": True, "1": True, "yes": True, "false": False, "0": False, "no":
 
 
 def parse_question_limits(options: Optional[list[str]]) -> dict[str, Any]:
-    """Per-question limits, kept in a file question's `options` as "key=value"
-    entries until questions get a settings object (T1.4.1):
+    """Per-question limits from a file question's `options`, written as
+    "key=value" entries before questions had `config` (T1.4.1). Still read,
+    under the config:
 
         max_mb=2
         types=application/pdf,image/*
@@ -190,6 +191,20 @@ def parse_question_limits(options: Optional[list[str]]) -> dict[str, Any]:
     return out
 
 
+def question_limits(options: Optional[list[str]], config: Optional[dict]) -> dict[str, Any]:
+    """A file question's limits: its legacy `options` entries, then its
+    `config` (FileQuestionConfig, validated on write) key by key on top."""
+    out = parse_question_limits(options)
+    config = config or {}
+    if config.get("max_mb"):
+        out["max_bytes"] = int(config["max_mb"] * MB)
+    types = [t.strip().lower() for t in config.get("allowed_types") or [] if t.strip()]
+    if types:
+        out["allowed_types"] = tuple(types)
+    out["image"].update({k: v for k, v in (config.get("image") or {}).items() if k in _IMAGE_KEYS})
+    return out
+
+
 def _purpose(name: str) -> Purpose:
     purpose = PURPOSES.get(name)
     if purpose is None:
@@ -198,9 +213,15 @@ def _purpose(name: str) -> Purpose:
 
 
 def effective_limits(
-    db: Session, *, organisation_id: int, purpose: str, question_options: Optional[list[str]] = None
+    db: Session,
+    *,
+    organisation_id: int,
+    purpose: str,
+    question_options: Optional[list[str]] = None,
+    question_config: Optional[dict] = None,
 ) -> EffectiveLimits:
-    """Code default → platform row → organisation row → question options.
+    """Code default → platform row → organisation row → question (options,
+    then config).
     The platform admin sets the defaults (up to the hard cap); the
     organisation and the question can only tighten size and types. Image
     settings are plain overrides at each layer."""
@@ -223,7 +244,11 @@ def effective_limits(
             types = intersect_types(types, org.allowed_types)
         image.update({k: v for k, v in (org.image or {}).items() if k in _IMAGE_KEYS})
 
-    question = parse_question_limits(question_options) if question_options is not None else {}
+    question = (
+        question_limits(question_options, question_config)
+        if question_options is not None or question_config
+        else {}
+    )
     if question.get("max_bytes"):
         max_bytes = min(max_bytes, question["max_bytes"])
     if question.get("allowed_types"):
@@ -347,28 +372,39 @@ def _trash_all(db: Session, file: StoredFile) -> None:
 
 
 def _file_question(db: Session, form_id: Optional[int], field_id: Optional[int], organisation_id: Optional[int]):
-    """The form and its file question, checked to belong to the organisation."""
+    """The form and its file question, checked to belong to the organisation.
+    The question is looked up as respondents see it: published versions first."""
     from modules.forms import repository as forms_repository
+    from modules.forms import service as forms_service
 
     if form_id is None or field_id is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "form_id and field_id are required for form answers")
     form = forms_repository.get_form(db, form_id)
     if form is None or (organisation_id is not None and form.organisation_id != organisation_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
-    field = next((f for f in form.fields if f.id == field_id), None)
+    field = forms_service.find_published_field(db, form, field_id)
     if field is None or field.type != "file":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "field_id must be a file question of this form")
     return form, field
 
 
-def _question_options_for(db: Session, file: StoredFile) -> Optional[list[str]]:
+def _question_field_for(db: Session, file: StoredFile):
     if file.purpose != "form_answer" or file.form_id is None or file.field_id is None:
         return None
     from modules.forms import repository as forms_repository
+    from modules.forms import service as forms_service
 
     form = forms_repository.get_form(db, file.form_id)
-    field = next((f for f in form.fields if f.id == file.field_id), None) if form else None
-    return list(field.options or []) if field is not None else None
+    return forms_service.find_published_field(db, form, file.field_id) if form else None
+
+
+def _limits(db: Session, *, organisation_id: int, purpose: str, field=None) -> EffectiveLimits:
+    if field is None:
+        return effective_limits(db, organisation_id=organisation_id, purpose=purpose)
+    return effective_limits(
+        db, organisation_id=organisation_id, purpose=purpose,
+        question_options=list(field.options or []), question_config=field.config,
+    )
 
 
 def limits_for_question(
@@ -377,16 +413,13 @@ def limits_for_question(
     """The limits a file question applies (organisation_id None: any
     organisation, for public respondents whose form was already checked)."""
     form, field = _file_question(db, form_id, field_id, organisation_id)
-    return effective_limits(
-        db, organisation_id=form.organisation_id, purpose="form_answer",
-        question_options=list(field.options or []),
-    )
+    return _limits(db, organisation_id=form.organisation_id, purpose="form_answer", field=field)
 
 
 def limits_for_file(db: Session, file: StoredFile) -> EffectiveLimits:
-    return effective_limits(
+    return _limits(
         db, organisation_id=file.organisation_id, purpose=file.purpose,
-        question_options=_question_options_for(db, file),
+        field=_question_field_for(db, file),
     )
 
 
@@ -429,7 +462,7 @@ def add(
     p = _purpose(purpose)
     content_type = content_type.split(";")[0].strip().lower()
     name = clean_name(name)
-    question_options = None
+    question_field = None
     token = None
 
     if isinstance(actor, PublicActor):
@@ -437,7 +470,7 @@ def add(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This kind of file can't be uploaded here")
         form, field = _file_question(db, actor.form_id, field_id, None)
         organisation_id, form_id = form.organisation_id, form.id
-        question_options = list(field.options or [])
+        question_field = field
         token = secrets.token_urlsafe(24)
     else:
         target_org = organisation_id if (organisation_id and actor.is_platform_admin) else actor.organisation_id
@@ -446,13 +479,13 @@ def add(
             organisation_id = target_org
         if purpose == "form_answer":
             form, field = _file_question(db, form_id, field_id, organisation_id)
-            question_options = list(field.options or [])
+            question_field = field
         elif purpose == "org_logo":
             if not _can_manage_org(actor, organisation_id):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can change the logo")
             form_id = field_id = None
 
-    limits = effective_limits(db, organisation_id=organisation_id, purpose=purpose, question_options=question_options)
+    limits = _limits(db, organisation_id=organisation_id, purpose=purpose, field=question_field)
     _check_limits(limits, content_type=content_type, size=size)
 
     provider = default_provider_name()

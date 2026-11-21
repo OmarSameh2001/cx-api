@@ -167,9 +167,11 @@ def to_form_create(generated: GeneratedForm, request: FormGenerateRequest) -> Fo
         "submitter_type": request.submitter_type or generated.submitter_type,
         # unit ids belong to the organisation; the user picks them in the builder
         "assigned_to_units": None,
-        "time_limit_minutes": generated.time_limit_minutes if is_exam else None,
-        "max_attempts": generated.max_attempts,
-        "results_revealed": generated.results_revealed,
+        "settings": {
+            "time_limit_minutes": generated.time_limit_minutes if is_exam else None,
+            "max_attempts": generated.max_attempts,
+            "results_revealed": generated.results_revealed,
+        },
         "fields": fields,
         "sections": sections or None,
     })
