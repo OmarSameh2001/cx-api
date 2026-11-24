@@ -12,11 +12,13 @@ from typing import Any, Callable, Optional
 from loguru import logger
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
-from config import EventsEnv, FilesEnv, RedisEnv
+from config import AuditEnv, EventsEnv, FilesEnv, NotificationsEnv, RedisEnv
 from db import SessionLocal
+from modules.audit import service as audit_service
 from modules.events import service as events_service
 from modules.files import service as files_service
 from modules.jobs import service as jobs_service
+from modules.notifications import service as notifications_service
 from modules.submissions import service as submissions_service
 
 
@@ -68,6 +70,32 @@ def cleanup_files() -> dict:
     return counts
 
 
+def purge_audit_log() -> dict:
+    """Deletes audit entries past their severity's retention (E1.8)."""
+    with SessionLocal() as db:
+        counts = audit_service.purge(db)
+    if counts:
+        logger.info("audit purge: {}", counts)
+    return counts
+
+
+def deliver_notifications() -> dict:
+    """Sends due email, SMS, WhatsApp and Slack deliveries (E1.9)."""
+    with SessionLocal() as db:
+        counts = notifications_service.deliver_due(db)
+    if any(counts.values()):
+        logger.info("notifications: {}", counts)
+    return counts
+
+
+def purge_notifications() -> dict:
+    with SessionLocal() as db:
+        counts = notifications_service.purge(db)
+    if any(counts.values()):
+        logger.info("notifications purge: {}", counts)
+    return counts
+
+
 def rebuild_results(form_id: Optional[int] = None, update_score: bool = False) -> dict:
     """Regrades finished submissions and rewrites their answer rows (E1.6).
     Dispatch-only: after a scoring change, or `scripts.py results:backfill`."""
@@ -93,6 +121,9 @@ JOBS: dict[str, Job] = {
         Job("events.relay", relay_events, EventsEnv.EVENTS_RELAY_SECONDS),
         Job("events.purge", purge_old_events, EventsEnv.EVENTS_PURGE_SECONDS),
         Job("files.cleanup", cleanup_files, FilesEnv.FILES_CLEANUP_SECONDS),
+        Job("audit.purge", purge_audit_log, AuditEnv.AUDIT_PURGE_SECONDS),
+        Job("notifications.deliver", deliver_notifications, NotificationsEnv.NOTIFICATIONS_DELIVER_SECONDS),
+        Job("notifications.purge", purge_notifications, NotificationsEnv.NOTIFICATIONS_PURGE_SECONDS),
         Job("results.rebuild", rebuild_results),
         Job("jobs.ping", ping),
     )

@@ -5,27 +5,27 @@ from typing import Optional, Dict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .model import NotificationDelivery
+from .model import MentionNotificationDelivery
 
 
-def get_notification_delivery(db: Session, delivery_id: uuid.UUID) -> NotificationDelivery | None:
-    return db.get(NotificationDelivery, delivery_id)
+def get_notification_delivery(db: Session, delivery_id: uuid.UUID) -> MentionNotificationDelivery | None:
+    return db.get(MentionNotificationDelivery, delivery_id)
 
 
-def list_notification_deliveries(db: Session, *, tenant_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[NotificationDelivery]:
+def list_mention_notification_deliveries(db: Session, *, tenant_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[MentionNotificationDelivery]:
     stmt = (
-        select(NotificationDelivery)
-        .where(NotificationDelivery.tenant_id == tenant_id)
-        .order_by(NotificationDelivery.sent_at.desc().nullslast())
+        select(MentionNotificationDelivery)
+        .where(MentionNotificationDelivery.tenant_id == tenant_id)
+        .order_by(MentionNotificationDelivery.sent_at.desc().nullslast())
         .limit(limit)
         .offset(offset)
     )
     return list(db.execute(stmt).scalars().all())
 
 
-def count_notification_deliveries(db: Session, *, tenant_id: uuid.UUID) -> int:
+def count_mention_notification_deliveries(db: Session, *, tenant_id: uuid.UUID) -> int:
     return db.execute(
-        select(func.count()).select_from(NotificationDelivery).where(NotificationDelivery.tenant_id == tenant_id)
+        select(func.count()).select_from(MentionNotificationDelivery).where(MentionNotificationDelivery.tenant_id == tenant_id)
     ).scalar_one()
 
 
@@ -42,8 +42,8 @@ def create_notification_delivery(
     context_id: Optional[uuid.UUID] = None,
     payload: Optional[Dict] = None,
     sent_at: Optional[datetime] = None,
-) -> NotificationDelivery:
-    delivery = NotificationDelivery(
+) -> MentionNotificationDelivery:
+    delivery = MentionNotificationDelivery(
         source_module=source_module,
         channel=channel,
         recipient=recipient,
@@ -60,12 +60,12 @@ def create_notification_delivery(
     return delivery
 
 
-def update_notification_delivery(db: Session, delivery: NotificationDelivery, *, data: dict) -> NotificationDelivery:
+def update_notification_delivery(db: Session, delivery: MentionNotificationDelivery, *, data: dict) -> MentionNotificationDelivery:
     for key, value in data.items():
         setattr(delivery, key, value)
     db.flush()
     return delivery
 
 
-def delete_notification_delivery(db: Session, delivery: NotificationDelivery) -> None:
+def delete_notification_delivery(db: Session, delivery: MentionNotificationDelivery) -> None:
     db.delete(delivery)

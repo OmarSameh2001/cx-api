@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 
 from . import repository
@@ -58,6 +59,7 @@ def create_unit(db: Session, *, payload: UnitCreate, organisation_id: int) -> Un
         parent_unit_id=payload.parent_unit_id,
         external_id=payload.external_id,
     )
+    audit.record_created(db, unit)
     db.commit()
     return repository.get_unit(db, unit.id)
 
@@ -79,13 +81,17 @@ def update_unit(db: Session, unit_id: int, organisation_id: int, *, payload: Uni
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be its own parent")
         if data["parent_unit_id"] in repository.get_descendant_unit_ids(db, unit_id):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be moved under one of its own sub-units")
+    before = audit.snapshot(unit)
     repository.update_unit(db, unit, data=data)
+    audit.record_changes(db, unit, before)
     db.commit()
     return repository.get_unit(db, unit_id)
 
 
 def delete_unit(db: Session, unit_id: int, organisation_id: int) -> None:
     unit = _ensure_unit(db, unit_id, organisation_id)
+    # rolled back with the delete if the unit is still in use
+    audit.record_deleted(db, unit)
     repository.delete_unit(db, unit)
     try:
         db.commit()

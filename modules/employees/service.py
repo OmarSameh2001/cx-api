@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from modules.audit import service as audit
 from modules.auth.service import hash_password
 from modules.roles.service import ensure_role_in_organisation
 from modules.units import repository as units_repository
@@ -100,6 +101,7 @@ def create_employee(
         role_id=payload.role_id,
         assigned_units=payload.assigned_units,
     )
+    audit.record_created(db, employee)
     db.commit()
     return repository.get_employee(db, employee.id)
 
@@ -134,7 +136,9 @@ def update_employee(
     if data.get("role_id") is not None:
         ensure_role_in_organisation(db, data["role_id"], organisation_id)
     _ensure_links_in_organisation(db, data, organisation_id)
+    before = audit.snapshot(employee)
     repository.update_employee(db, employee, data=data)
+    audit.record_changes(db, employee, before)
     db.commit()
     return repository.get_employee(db, employee_id)
 
@@ -143,5 +147,6 @@ def delete_employee(
     db: Session, *, employee_id: int, organisation_id: int, assigned_unit_ids: list[int]
 ) -> None:
     employee = _ensure_employee(db, employee_id, organisation_id, assigned_unit_ids)
+    audit.record_deleted(db, employee)
     repository.delete_employee(db, employee)
     db.commit()

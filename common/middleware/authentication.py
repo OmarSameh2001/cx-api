@@ -6,6 +6,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
+from common import request_context
 from config import AuthEnv
 
 
@@ -83,6 +84,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return _error(401, "token_invalid", "Wrong token type")
 
         request.state.principal = payload
+        if payload.get("principal") == "employee":
+            request_context.set_actor(payload.get("id"), payload.get("organisation_id"))
         return await call_next(request)
 
 

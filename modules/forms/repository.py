@@ -201,7 +201,16 @@ def set_public_token(db: Session, form: Form, token: Optional[str]) -> Form:
     return form
 
 
-def update_form(db: Session, form: Form, *, data: dict, fields: Optional[list[dict]]) -> Form:
+def update_form(
+    db: Session,
+    form: Form,
+    *,
+    data: dict,
+    fields: Optional[list[dict]],
+    before_commit: Optional[Callable[[Form], None]] = None,
+) -> Form:
+    """`before_commit` runs once the changes are applied, inside the same
+    transaction (e.g. to record them in the audit log)."""
     try:
         for key, value in data.items():
             setattr(form, key, value)
@@ -224,6 +233,8 @@ def update_form(db: Session, form: Form, *, data: dict, fields: Optional[list[di
             for field_id, obj in existing.items():
                 if field_id not in kept:
                     form.fields.remove(obj)
+        if before_commit is not None:
+            before_commit(form)
         db.commit()
     except Exception:
         db.rollback()

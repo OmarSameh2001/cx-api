@@ -11,8 +11,8 @@ from db import Base
 if TYPE_CHECKING:
     from ..keywords.model import Keyword
     from ..mentions.model import Mention
-    from ..notification_deliveries.model import NotificationDelivery
-    from ..notification_rules.model import NotificationRule
+    from ..mention_notification_deliveries.model import MentionNotificationDelivery
+    from ..mention_notification_rules.model import MentionNotificationRule
     from ..organisations.model import Organisation
     from ..platform_configs.model import TenantPlatformConfig
 
@@ -53,9 +53,9 @@ class Tenant(Base):
     keywords: Mapped[List["Keyword"]] = relationship(
         back_populates="tenant", passive_deletes=True
     )
-    notification_rules: Mapped[List["NotificationRule"]] = relationship(
+    mention_notification_rules: Mapped[List["MentionNotificationRule"]] = relationship(
         back_populates="tenant", passive_deletes=True
     )
-    notification_deliveries: Mapped[List["NotificationDelivery"]] = relationship(
+    mention_notification_deliveries: Mapped[List["MentionNotificationDelivery"]] = relationship(
         back_populates="tenant", passive_deletes=True
     )

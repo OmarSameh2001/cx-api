@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 from modules.tenants.service import ensure_tenant_in_organisation, tenant_in_organisation
 
 from . import repository
-from .dto import NotificationRuleCreate, NotificationRuleUpdate
-from .model import NotificationRule
+from .dto import MentionNotificationRuleCreate, MentionNotificationRuleUpdate
+from .model import MentionNotificationRule
 
 
-def _ensure_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> NotificationRule:
+def _ensure_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> MentionNotificationRule:
     rule = repository.get_notification_rule(db, rule_id)
     # another organisation's row is reported as missing
     if rule is None or not tenant_in_organisation(db, rule.tenant_id, organisation_id):
@@ -18,18 +18,18 @@ def _ensure_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: 
     return rule
 
 
-def list_notification_rules(db: Session, *, tenant_id: uuid.UUID, organisation_id: int, limit: int, offset: int) -> tuple[list[NotificationRule], int]:
+def list_mention_notification_rules(db: Session, *, tenant_id: uuid.UUID, organisation_id: int, limit: int, offset: int) -> tuple[list[MentionNotificationRule], int]:
     ensure_tenant_in_organisation(db, tenant_id, organisation_id)
-    items = repository.list_notification_rules(db, tenant_id=tenant_id, limit=limit, offset=offset)
-    total = repository.count_notification_rules(db, tenant_id=tenant_id)
+    items = repository.list_mention_notification_rules(db, tenant_id=tenant_id, limit=limit, offset=offset)
+    total = repository.count_mention_notification_rules(db, tenant_id=tenant_id)
     return items, total
 
 
-def get_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> NotificationRule:
+def get_notification_rule(db: Session, rule_id: uuid.UUID, organisation_id: int) -> MentionNotificationRule:
     return _ensure_notification_rule(db, rule_id, organisation_id)
 
 
-def create_notification_rule(db: Session, *, payload: NotificationRuleCreate, organisation_id: int) -> NotificationRule:
+def create_notification_rule(db: Session, *, payload: MentionNotificationRuleCreate, organisation_id: int) -> MentionNotificationRule:
     ensure_tenant_in_organisation(db, payload.tenant_id, organisation_id)
     rule = repository.create_notification_rule(
         db,
@@ -47,7 +47,7 @@ def create_notification_rule(db: Session, *, payload: NotificationRuleCreate, or
     return repository.get_notification_rule(db, rule.id)
 
 
-def update_notification_rule(db: Session, rule_id: uuid.UUID, *, organisation_id: int, payload: NotificationRuleUpdate) -> NotificationRule:
+def update_notification_rule(db: Session, rule_id: uuid.UUID, *, organisation_id: int, payload: MentionNotificationRuleUpdate) -> MentionNotificationRule:
     rule = _ensure_notification_rule(db, rule_id, organisation_id)
     data = payload.model_dump(exclude_unset=True)
     if not data:

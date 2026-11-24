@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from config import AuthEnv
+from modules.audit import service as audit
 from modules.units.repository import get_descendant_unit_ids
 
 from . import repository
@@ -143,10 +144,18 @@ def login_employee(
 ):
     employee = repository.get_employee_by_email(db, email)
     if employee is None or not verify_password(password, employee.password):
+        # never the email itself (personal data, and often a typo of a real one)
+        _record_failed_login(
+            db, ip, employee, reason="unknown_account" if employee is None else "wrong_password"
+        )
         raise AuthError("Invalid email or password")
     if not employee.is_active:
+        audit.record(db, "auth.login_blocked", entity=employee, actor_id=None, ip=ip)
+        db.commit()
         raise AuthError("Account is disabled", code=status.HTTP_403_FORBIDDEN)
 
+    # saved by _issue_tokens' commit, with the new session
+    audit.record(db, "auth.login", entity=employee, actor_id=employee.id, ip=ip)
     claims = _build_employee_claims(db, employee)
     access, refresh, expires_in = _issue_tokens(
         db,
@@ -157,6 +166,18 @@ def login_employee(
         ip=ip,
     )
     return employee, claims, access, refresh, expires_in
+
+
+def _record_failed_login(db: Session, ip: Optional[str], employee, *, reason: str) -> None:
+    """Saved at once: the request fails, so nothing else will commit it."""
+    severity = audit.failed_login_severity(db, ip)
+    if employee is None:
+        audit.record(db, "auth.login_failed", organisation_id=None, actor_id=None, ip=ip,
+                     severity=severity, data={"reason": reason})
+    else:
+        audit.record(db, "auth.login_failed", entity=employee, actor_id=None, ip=ip,
+                     severity=severity, data={"reason": reason})
+    db.commit()
 
 
 def refresh_session(
@@ -205,10 +226,18 @@ def logout(db: Session, *, refresh_token: Optional[str]) -> int:
         payload = _decode_refresh_token(refresh_token)
     except jwt.PyJWTError:
         return 0
-    return repository.remove_refresh_jti(
-        db, payload["principal"], int(payload["id"]), payload["jti"]
-    )
+    principal_id = int(payload["id"])
+    if payload["principal"] == "employee":
+        employee = repository.get_employee_by_id(db, principal_id)
+        if employee is not None:
+            # saved only if the session is really revoked (that commits)
+            audit.record(db, "auth.logout", entity=employee, actor_id=employee.id)
+    return repository.remove_refresh_jti(db, payload["principal"], principal_id, payload["jti"])
 
 
 def logout_all(db: Session, *, principal_type: str, principal_id: int) -> int:
+    if principal_type == "employee":
+        employee = repository.get_employee_by_id(db, principal_id)
+        if employee is not None:
+            audit.record(db, "auth.logout_all", entity=employee, actor_id=employee.id)
     return repository.clear_refresh_jtis(db, principal_type, principal_id)

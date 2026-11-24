@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 from modules.roles import service as roles_service
 
@@ -61,6 +62,7 @@ def create_organisation(db: Session, *, payload: OrganisationCreate) -> Organisa
     )
     # Same transaction: an organisation never exists without its roles.
     roles_service.seed_default_roles(db, organisation_id=org.id)
+    audit.record_created(db, org)
     db.commit()
     return repository.get_organisation(db, org.id)
 
@@ -86,6 +88,7 @@ def update_organisation(
             )
         for f in PLATFORM_ONLY_FIELDS:
             data.pop(f, None)
+    before = audit.snapshot(org)
     if "logo_file_id" in data:
         _set_logo_file(db, org, data.pop("logo_file_id"), viewer)
     if "external_id" in data and data["external_id"]:
@@ -93,6 +96,7 @@ def update_organisation(
         if existing and existing.id != org_id:
             raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
     repository.update_organisation(db, org, data=data)
+    audit.record_changes(db, org, before)
     db.commit()
     return repository.get_organisation(db, org_id)
 
@@ -141,6 +145,7 @@ def delete_organisation(db: Session, org_id: int) -> None:
     # the file rows go with the organisation; their stored bytes are
     # deleted once that has committed
     stored = files.stored_objects_of_organisations(db, [org.id])
+    audit.record_deleted(db, org)
     org.logo_file_id = None
     db.flush()
     repository.delete_organisation(db, org)

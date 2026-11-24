@@ -296,7 +296,12 @@ def platform_admin(email: str, revoke: bool):
         ).scalar_one_or_none()
         if employee is None:
             raise click.ClickException(f"No employee with email {email}")
+        from modules.audit import service as audit
+
+        before = audit.snapshot(employee)
         employee.is_platform_admin = not revoke
+        # critical: who holds platform power is the one thing worth alerting on
+        audit.record_changes(db, employee, before, data={"via": "cli"})
         db.commit()
         click.echo(f"{email}: is_platform_admin = {employee.is_platform_admin}")
     finally:

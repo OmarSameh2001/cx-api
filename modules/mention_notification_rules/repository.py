@@ -4,27 +4,27 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .model import NotificationRule
+from .model import MentionNotificationRule
 
 
-def get_notification_rule(db: Session, rule_id: uuid.UUID) -> NotificationRule | None:
-    return db.get(NotificationRule, rule_id)
+def get_notification_rule(db: Session, rule_id: uuid.UUID) -> MentionNotificationRule | None:
+    return db.get(MentionNotificationRule, rule_id)
 
 
-def list_notification_rules(db: Session, *, tenant_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[NotificationRule]:
+def list_mention_notification_rules(db: Session, *, tenant_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[MentionNotificationRule]:
     stmt = (
-        select(NotificationRule)
-        .where(NotificationRule.tenant_id == tenant_id)
-        .order_by(NotificationRule.created_at.desc())
+        select(MentionNotificationRule)
+        .where(MentionNotificationRule.tenant_id == tenant_id)
+        .order_by(MentionNotificationRule.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
     return list(db.execute(stmt).scalars().all())
 
 
-def count_notification_rules(db: Session, *, tenant_id: uuid.UUID) -> int:
+def count_mention_notification_rules(db: Session, *, tenant_id: uuid.UUID) -> int:
     return db.execute(
-        select(func.count()).select_from(NotificationRule).where(NotificationRule.tenant_id == tenant_id)
+        select(func.count()).select_from(MentionNotificationRule).where(MentionNotificationRule.tenant_id == tenant_id)
     ).scalar_one()
 
 
@@ -40,8 +40,8 @@ def create_notification_rule(
     email_enabled: bool = False,
     in_app_enabled: bool = False,
     is_active: bool = True,
-) -> NotificationRule:
-    rule = NotificationRule(
+) -> MentionNotificationRule:
+    rule = MentionNotificationRule(
         source_module=source_module,
         rule_type=rule_type,
         tenant_id=tenant_id,
@@ -57,12 +57,12 @@ def create_notification_rule(
     return rule
 
 
-def update_notification_rule(db: Session, rule: NotificationRule, *, data: dict) -> NotificationRule:
+def update_notification_rule(db: Session, rule: MentionNotificationRule, *, data: dict) -> MentionNotificationRule:
     for key, value in data.items():
         setattr(rule, key, value)
     db.flush()
     return rule
 
 
-def delete_notification_rule(db: Session, rule: NotificationRule) -> None:
+def delete_notification_rule(db: Session, rule: MentionNotificationRule) -> None:
     db.delete(rule)

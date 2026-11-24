@@ -1,5 +1,5 @@
-"""T0.6.1 findings, fixed: units, assignments, the tenant-scoped modules,
-employee links, form unit targeting and the forms lookup all stay inside the
+"""T0.6.1 findings, fixed: units, assignments, the parked tenant-scoped
+modules (now unmounted), employee links, form unit targeting and the forms lookup all stay inside the
 caller's organisation. (The end-to-end version against the real database is
 cx-front/e2e/isolation.spec.ts.)"""
 
@@ -10,19 +10,14 @@ import pytest
 
 from modules.assignments import repository as assignments_repo
 from modules.employees import repository as employees_repo
-from modules.keywords import repository as keywords_repo
-from modules.notification_rules import repository as rules_repo
-from modules.tenants import repository as tenants_repo
 from modules.units import repository as units_repo
 from tests.conftest import employee_token
 
 OWN, OTHER = 10, 20
 TENANT_OTHER = uuid.uuid4()
-TENANT_OWN = uuid.uuid4()
 EVERYTHING = [
     f"{r}:{a}"
-    for r in ["units", "assignments", "keywords", "mentions", "notification_rules", "notification_deliveries",
-              "employees", "forms"]
+    for r in ["units", "assignments", "employees", "forms"]
     for a in ["read", "create", "update", "delete"]
 ]
 
@@ -41,8 +36,6 @@ def world(monkeypatch):
         units_repo, "unit_ids_in_organisation",
         lambda db, ids, org: {i for i in ids if i in UNITS and UNITS[i].organisation_id == org},
     )
-    tenants = {TENANT_OWN: SimpleNamespace(organisation_id=OWN), TENANT_OTHER: SimpleNamespace(organisation_id=OTHER)}
-    monkeypatch.setattr(tenants_repo, "get_tenant", lambda db, tid: tenants.get(tid))
 
 
 # ── units: the organisation comes from the token ────────────────────────────
@@ -101,36 +94,16 @@ def test_cannot_assign_onto_another_organisations_unit(client, db, monkeypatch):
     assert res.status_code == 404
 
 
-# ── tenant-scoped modules ───────────────────────────────────────────────────
+# ── parked tenant-scoped modules: unmounted ──────────────────────────────────
 
-def test_listing_another_organisations_tenant_is_not_found(client):
-    for path in ("/keywords", "/mentions", "/notification-rules", "/notification-deliveries"):
-        res = client.get(f"{path}?tenant_id={TENANT_OTHER}", headers=caller())
-        assert res.status_code == 404, path
-
-
-def test_another_organisations_keyword_is_not_found(client, db, monkeypatch):
-    kw = SimpleNamespace(id=uuid.uuid4(), tenant_id=TENANT_OTHER)
-    monkeypatch.setattr(keywords_repo, "get_keyword", lambda db, kid: kw)
-    for method in ("GET", "PATCH", "DELETE"):
-        body = {"json": {"is_active": False}} if method == "PATCH" else {}
-        assert client.request(method, f"/keywords/{kw.id}", headers=caller(), **body).status_code == 404
-    assert db.commits == 0 and db.deleted == []
-
-
-def test_cannot_create_in_another_organisations_tenant(client, db):
-    res = client.post("/keywords", json={"phrase": "x", "tenant_id": str(TENANT_OTHER)}, headers=caller())
-    assert res.status_code == 404 and db.added == []
-
-
-def test_delivery_rule_must_be_the_tenants_own(client, db, monkeypatch):
-    rule = SimpleNamespace(tenant_id=TENANT_OTHER)
-    monkeypatch.setattr(rules_repo, "get_notification_rule", lambda db, rid: rule)
-    res = client.post("/notification-deliveries", headers=caller(), json={
-        "tenant_id": str(TENANT_OWN), "notification_rule_id": str(uuid.uuid4()),
-        "source_module": "m", "channel": "email", "recipient": "a@b.co", "status": "sent",
-    })
-    assert res.status_code == 404 and db.added == []
+@pytest.mark.parametrize("path", [
+    "/tenants", "/keywords", "/mentions", "/platform-configs",
+    "/notification-rules", "/notification-deliveries",
+    "/mention-notification-rules", "/mention-notification-deliveries",
+])
+def test_parked_mentions_routers_are_not_mounted(client, path):
+    res = client.get(f"{path}?tenant_id={TENANT_OTHER}", headers=caller(is_platform_admin=True))
+    assert res.status_code == 404, path
 
 
 # ── employees and forms can't point at another organisation ─────────────────

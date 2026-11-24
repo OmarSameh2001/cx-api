@@ -6,14 +6,16 @@ from sqlalchemy import text
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
 from common.errors import CodedHTTPException, coded_http_exception_handler
-from common.middleware import AuthenticationMiddleware, BodySizeLimitMiddleware
+from common.middleware import AuthenticationMiddleware, BodySizeLimitMiddleware, RequestContextMiddleware
 from db import engine
 from modules.assignments.route import router as assignments_router
+from modules.audit.route import router as audit_router
 from modules.auth.route import router as auth_router
 from modules.employees.route import router as employees_router
 from modules.files.route import router as files_router
 from modules.forms.route import router as forms_router
 from modules.jobs.route import router as jobs_router
+from modules.notifications.route import router as notifications_router
 from modules.organisations.route import router as organisations_router
 from modules.public_api.route import router as public_router
 from modules.results.route import router as results_router
@@ -21,12 +23,6 @@ from modules.roles.route import router as roles_router
 from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
 from modules.units.route import router as units_router
-from modules.tenants.route import router as tenants_router
-from modules.keywords.route import router as keywords_router
-from modules.mentions.route import router as mentions_router
-from modules.platform_configs.route import router as platform_configs_router
-from modules.notification_rules.route import router as notification_rules_router
-from modules.notification_deliveries.route import router as notification_deliveries_router
 from modules.ai.route import router as ai_router
 
 
@@ -54,7 +50,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+# outermost: every request, refused ones included, gets a correlation ID
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
 app.include_router(employees_router)
@@ -67,15 +66,15 @@ app.include_router(organisations_router)
 app.include_router(units_router)
 app.include_router(lookups_router)
 app.include_router(public_router)
-app.include_router(tenants_router)
-app.include_router(keywords_router)
-app.include_router(mentions_router)
-app.include_router(platform_configs_router)
-app.include_router(notification_rules_router)
-app.include_router(notification_deliveries_router)
 app.include_router(ai_router)
 app.include_router(jobs_router)
 app.include_router(files_router)
+app.include_router(audit_router)
+app.include_router(notifications_router)
+
+# Parked (Mentions was dropped; E0.3): the tenants, keywords, mentions,
+# platform-config and mention notification routers stay unmounted. Their
+# modules and tables are kept.
 
 
 @app.get("/")

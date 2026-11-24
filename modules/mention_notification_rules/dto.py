@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class NotificationRuleCreate(BaseModel):
+class MentionNotificationRuleCreate(BaseModel):
     source_module: str = Field(min_length=1, max_length=64)
     rule_type: str = Field(min_length=1, max_length=64)
     platform: Optional[str] = Field(default=None, max_length=64)
@@ -17,7 +17,7 @@ class NotificationRuleCreate(BaseModel):
     tenant_id: uuid.UUID
 
 
-class NotificationRuleUpdate(BaseModel):
+class MentionNotificationRuleUpdate(BaseModel):
     source_module: Optional[str] = Field(default=None, min_length=1, max_length=64)
     rule_type: Optional[str] = Field(default=None, min_length=1, max_length=64)
     platform: Optional[str] = Field(default=None, max_length=64)
@@ -28,7 +28,7 @@ class NotificationRuleUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class NotificationRuleSummary(BaseModel):
+class MentionNotificationRuleSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     source_module: str
@@ -37,7 +37,7 @@ class NotificationRuleSummary(BaseModel):
     created_at: datetime
 
 
-class NotificationRuleRead(BaseModel):
+class MentionNotificationRuleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     source_module: str

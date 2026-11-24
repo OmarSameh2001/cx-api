@@ -1,6 +1,8 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from modules.audit import service as audit
+
 from . import repository
 from .dto import PermissionCreate, RoleCreate, RoleUpdate
 from .model import Permission, Role
@@ -36,6 +38,29 @@ def _ensure_permissions_exist(db: Session, permission_ids: list[int]) -> None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, f"Permissions not found: {missing}"
         )
+
+
+def _current_permission_ids(role: Role) -> set[int]:
+    return {rp.permission_id for rp in role.role_permissions}
+
+
+def _permission_change(db: Session, before: set[int], after: set[int]) -> dict | None:
+    """The role's permissions as a change-log entry: keys added and removed."""
+    added, removed = after - before, before - after
+    if not added and not removed:
+        return None
+    keys = {p.id: f"{p.resource}:{p.action}" for p in repository.list_permissions_by_ids(db, sorted(added | removed))}
+    return {
+        "added": sorted(keys.get(i, f"#{i}") for i in added),
+        "removed": sorted(keys.get(i, f"#{i}") for i in removed),
+    }
+
+
+def _record_permissions_changed(db: Session, role: Role, before: set[int], after: set[int]) -> None:
+    change = _permission_change(db, before, after)
+    if change is not None:
+        audit.record(db, "role.permissions_changed", entity=role, changes={"permissions": change},
+                     data={"system_role": True} if role.is_system else None)
 
 
 def ensure_role_in_organisation(db: Session, role_id: int, organisation_id: int) -> None:
@@ -74,6 +99,10 @@ def create_role(
             permission_ids=payload.permission_ids,
             updated_by=employee_id,
         )
+    event = audit.record_created(db, role)
+    granted = _permission_change(db, set(), set(payload.permission_ids or []))
+    if granted is not None:
+        event.changes = {**(event.changes or {}), "permissions": granted}
     db.commit()
     return _ensure_role(db, role.id, organisation_id)
 
@@ -94,7 +123,9 @@ def update_role(
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "Role name already exists"
             )
+    before = audit.snapshot(role)
     repository.update_role(db, role, data=data)
+    audit.record_changes(db, role, before)
     db.commit()
     return _ensure_role(db, role.id, organisation_id)
 
@@ -110,6 +141,7 @@ def delete_role(db: Session, *, role_id: int, organisation_id: int) -> None:
             status.HTTP_409_CONFLICT,
             "Role is assigned to employees; reassign before deletion",
         )
+    audit.record_deleted(db, role)
     repository.delete_role(db, role)
     db.commit()
 
@@ -124,9 +156,11 @@ def replace_role_permissions(
 ) -> Role:
     role = _ensure_role(db, role_id, organisation_id)
     _ensure_permissions_exist(db, permission_ids)
+    before = _current_permission_ids(role)
     repository.replace_role_permissions(
         db, role, permission_ids=permission_ids, updated_by=employee_id
     )
+    _record_permissions_changed(db, role, before, set(permission_ids))
     db.commit()
     return _ensure_role(db, role.id, organisation_id)
 
@@ -141,9 +175,11 @@ def add_role_permissions(
 ) -> Role:
     role = _ensure_role(db, role_id, organisation_id)
     _ensure_permissions_exist(db, permission_ids)
+    before = _current_permission_ids(role)
     repository.add_role_permissions(
         db, role, permission_ids=permission_ids, updated_by=employee_id
     )
+    _record_permissions_changed(db, role, before, before | set(permission_ids))
     db.commit()
     return _ensure_role(db, role.id, organisation_id)
 
@@ -151,9 +187,11 @@ def add_role_permissions(
 def remove_role_permission(
     db: Session, *, role_id: int, permission_id: int, organisation_id: int
 ) -> None:
-    _ensure_role(db, role_id, organisation_id)
+    role = _ensure_role(db, role_id, organisation_id)
     _ensure_permission(db, permission_id)
-    repository.remove_role_permission(db, role_id, permission_id)
+    before = _current_permission_ids(role)
+    if repository.remove_role_permission(db, role_id, permission_id):
+        _record_permissions_changed(db, role, before, before - {permission_id})
     db.commit()
 
 
@@ -172,12 +210,17 @@ def create_permission(
     permission = repository.create_permission(
         db, resource=payload.resource, action=payload.action
     )
+    db.flush()
+    audit.record(db, "permission.created", entity_type="permission", entity_id=permission.id,
+                 organisation_id=None, data={"key": f"{permission.resource}:{permission.action}"})
     db.commit()
     return permission
 
 
 def delete_permission(db: Session, *, permission_id: int) -> None:
     permission = _ensure_permission(db, permission_id)
+    audit.record(db, "permission.deleted", entity_type="permission", entity_id=permission.id,
+                 organisation_id=None, data={"key": f"{permission.resource}:{permission.action}"})
     repository.delete_permission(db, permission)
     db.commit()
 

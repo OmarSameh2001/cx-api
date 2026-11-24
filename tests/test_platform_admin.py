@@ -140,12 +140,28 @@ def test_platform_admin_changes_billing_fields(client, orgs, db):
 
 # ── tenants ──────────────────────────────────────────────────────────────────
 
-def test_tenants_need_platform_admin(client, monkeypatch):
+def test_tenants_are_not_mounted(client):
+    assert client.get("/tenants", headers=platform()).status_code == 404
+
+
+def test_parked_tenants_router_still_needs_platform_admin(db, monkeypatch):
+    """Unmounted with Mentions (E0.3), but if it's ever mounted again it must
+    still refuse organisation admins."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from db import get_db
+    from modules.tenants.route import router as tenants_router
+
+    app = FastAPI()
+    app.include_router(tenants_router)
+    app.dependency_overrides[get_db] = lambda: db
+    parked = TestClient(app)
     monkeypatch.setattr(tenants_repo, "list_tenants", lambda db, **kw: [], raising=False)
     monkeypatch.setattr(tenants_repo, "count_tenants", lambda db, **kw: 0, raising=False)
-    assert client.get("/tenants", headers=org_admin()).status_code == 403
-    assert client.post("/tenants", json={"name": "t", "email": "t@x.com"}, headers=org_admin()).status_code == 403
-    assert client.get("/tenants", headers=platform()).status_code == 200
+    assert parked.get("/tenants", headers=org_admin()).status_code == 403
+    assert parked.post("/tenants", json={"name": "t", "email": "t@x.com"}, headers=org_admin()).status_code == 403
+    assert parked.get("/tenants", headers=platform()).status_code == 200
 
 
 # ── permission catalogue ─────────────────────────────────────────────────────

@@ -10,10 +10,7 @@ class PermissionKey:
         "submissions",
         "assignments",
         "roles",
-        "mentions",
-        "keywords",
-        "notification_rules",
-        "notification_deliveries",
+        "audit",
     ]
 
     ACTIONS = [
@@ -23,12 +20,25 @@ class PermissionKey:
         "delete",
     ]
 
+    # Resources that don't take every action. The audit log is written by
+    # the app itself, never through the API, so it can only be read.
+    RESOURCE_ACTIONS: dict[str, list[str]] = {
+        "audit": ["read"],
+    }
+
     # Resources that used to be role permissions and must not be any more.
     PLATFORM_RESOURCES = ["organisations", "tenants"]
+    # The Mentions module was dropped and its routers unmounted, so its
+    # permissions left the catalogue too.
+    DROPPED_RESOURCES = ["mentions", "keywords", "notification_rules", "notification_deliveries"]
 
     @classmethod
     def all_pairs(cls) -> list[tuple[str, str]]:
-        return [(resource, action) for resource in cls.RESOURCES for action in cls.ACTIONS]
+        return [
+            (resource, action)
+            for resource in cls.RESOURCES
+            for action in cls.RESOURCE_ACTIONS.get(resource, cls.ACTIONS)
+        ]
 
 
 # Roles every organisation starts with. `None` means every permission in

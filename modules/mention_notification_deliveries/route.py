@@ -10,35 +10,35 @@ from modules.auth.dto import EmployeePrincipal
 from modules.auth.route import current_employee
 
 from . import controller
-from .dto import NotificationDeliveryCreate, NotificationDeliveryRead, NotificationDeliverySummary, NotificationDeliveryUpdate
+from .dto import MentionNotificationDeliveryCreate, MentionNotificationDeliveryRead, MentionNotificationDeliverySummary, MentionNotificationDeliveryUpdate
 
-router = APIRouter(prefix="/notification-deliveries", tags=["notification_deliveries"])
+router = APIRouter(prefix="/mention-notification-deliveries", tags=["mention_notification_deliveries"])
 
 
-@router.get("", response_model=Page[NotificationDeliverySummary])
-@require_permission("notification_deliveries:read")
-def list_notification_deliveries(
+@router.get("", response_model=Page[MentionNotificationDeliverySummary])
+@require_permission("mention_notification_deliveries:read")
+def list_mention_notification_deliveries(
     tenant_id: uuid.UUID,
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.list_notification_deliveries(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
+    return controller.list_mention_notification_deliveries(db, tenant_id=tenant_id, organisation_id=employee.organisation_id, limit=limit, offset=offset)
 
 
-@router.post("", response_model=NotificationDeliveryRead, status_code=status.HTTP_201_CREATED)
-@require_permission("notification_deliveries:create")
+@router.post("", response_model=MentionNotificationDeliveryRead, status_code=status.HTTP_201_CREATED)
+@require_permission("mention_notification_deliveries:create")
 def create_notification_delivery(
-    payload: NotificationDeliveryCreate,
+    payload: MentionNotificationDeliveryCreate,
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
     return controller.create_notification_delivery(db, payload, employee.organisation_id)
 
 
-@router.get("/{delivery_id}", response_model=NotificationDeliveryRead)
-@require_permission("notification_deliveries:read")
+@router.get("/{delivery_id}", response_model=MentionNotificationDeliveryRead)
+@require_permission("mention_notification_deliveries:read")
 def get_notification_delivery(
     delivery_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -47,11 +47,11 @@ def get_notification_delivery(
     return controller.get_notification_delivery(db, delivery_id, employee.organisation_id)
 
 
-@router.patch("/{delivery_id}", response_model=NotificationDeliveryRead)
-@require_permission("notification_deliveries:update")
+@router.patch("/{delivery_id}", response_model=MentionNotificationDeliveryRead)
+@require_permission("mention_notification_deliveries:update")
 def update_notification_delivery(
     delivery_id: uuid.UUID,
-    payload: NotificationDeliveryUpdate,
+    payload: MentionNotificationDeliveryUpdate,
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
@@ -59,7 +59,7 @@ def update_notification_delivery(
 
 
 @router.delete("/{delivery_id}", status_code=status.HTTP_204_NO_CONTENT)
-@require_permission("notification_deliveries:delete")
+@require_permission("mention_notification_deliveries:delete")
 def delete_notification_delivery(
     delivery_id: uuid.UUID,
     db: Session = Depends(get_db),

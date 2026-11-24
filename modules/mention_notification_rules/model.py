@@ -9,12 +9,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db import Base
 
 if TYPE_CHECKING:
-    from ..notification_deliveries.model import NotificationDelivery
+    from ..mention_notification_deliveries.model import MentionNotificationDelivery
     from ..tenants.model import Tenant
 
 
-class NotificationRule(Base):
-    __tablename__ = "notification_rules"
+class MentionNotificationRule(Base):
+    __tablename__ = "mention_notification_rules"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -41,7 +41,7 @@ class NotificationRule(Base):
         index=True,
     )
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="notification_rules")
-    deliveries: Mapped[List["NotificationDelivery"]] = relationship(
+    tenant: Mapped["Tenant"] = relationship(back_populates="mention_notification_rules")
+    deliveries: Mapped[List["MentionNotificationDelivery"]] = relationship(
         back_populates="notification_rule"
     )

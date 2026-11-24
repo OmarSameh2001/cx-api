@@ -5,7 +5,7 @@ from typing import Optional, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class NotificationDeliveryCreate(BaseModel):
+class MentionNotificationDeliveryCreate(BaseModel):
     source_module: str = Field(min_length=1, max_length=64)
     context_type: Optional[str] = Field(default=None, max_length=64)
     context_id: Optional[uuid.UUID] = None
@@ -18,12 +18,12 @@ class NotificationDeliveryCreate(BaseModel):
     tenant_id: uuid.UUID
 
 
-class NotificationDeliveryUpdate(BaseModel):
+class MentionNotificationDeliveryUpdate(BaseModel):
     status: Optional[str] = Field(default=None, min_length=1, max_length=32)
     sent_at: Optional[datetime] = None
 
 
-class NotificationDeliverySummary(BaseModel):
+class MentionNotificationDeliverySummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     channel: str
@@ -32,7 +32,7 @@ class NotificationDeliverySummary(BaseModel):
     sent_at: Optional[datetime]
 
 
-class NotificationDeliveryRead(BaseModel):
+class MentionNotificationDeliveryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     source_module: str

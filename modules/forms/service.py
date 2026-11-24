@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from common.errors import CodedHTTPException
+from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 from modules.events import service as events
 from modules.units import repository as units_repository
@@ -304,9 +305,56 @@ def find_published_field(db: Session, form: Form, field_id: int):
     return next((f for f in form.fields if f.id == field_id), None)
 
 
+_ANSWER_KEY_ATTRS = ("right_answer", "score_weight")
+
+
+def _answer_key_changes(old: Optional[dict], new: dict) -> tuple[dict, dict]:
+    """What a publish changes in how answers are scored: correct answers and
+    weights of questions that were already in the previous version (matched
+    by key), and section weights. ({change-log entries}, {key: question})."""
+    if not old:
+        return {}, {}
+    changes: dict[str, Any] = {}
+    labels: dict[str, str] = {}
+    before = {f.get("key"): f for f in old.get("fields") or []}
+    for f in new.get("fields") or []:
+        prev = before.get(f.get("key"))
+        if prev is None:
+            continue
+        for attr in _ANSWER_KEY_ATTRS:
+            if prev.get(attr) != f.get(attr):
+                changes[f"{f['key']}.{attr}"] = [audit.value(prev.get(attr)), audit.value(f.get(attr))]
+                labels[f["key"]] = audit.value(f.get("question") or "")
+    s_before = {s["id"]: s for s in old.get("sections") or []}
+    for sec in new.get("sections") or []:
+        prev = s_before.get(sec["id"])
+        if prev is not None and prev.get("score_weight", 1.0) != sec.get("score_weight", 1.0):
+            changes[f"section_{sec['id']}.score_weight"] = [
+                prev.get("score_weight", 1.0), sec.get("score_weight", 1.0),
+            ]
+    return changes, labels
+
+
+def _record_publish(db: Session, form: Form, previous: Optional[dict], version: FormVersion) -> None:
+    questions, sections = _diff(previous, version.snapshot)
+    audit.record(db, "form.published", entity=form, data={
+        "version": version.number,
+        "questions_added": len(questions.added),
+        "questions_removed": len(questions.removed),
+        "questions_changed": len(questions.changed),
+        "sections_changed": len(sections.added) + len(sections.removed) + len(sections.changed),
+    })
+    changes, labels = _answer_key_changes(previous, version.snapshot)
+    if changes:
+        audit.record(db, "form.answer_key_changed", entity=form, changes=changes,
+                     data={"version": version.number, "questions": labels})
+
+
 def _publish(db: Session, form: Form, employee_id: Optional[int]) -> FormVersion:
     """New version from the draft, made current, with its event. No commit."""
+    previous = form.current_version.snapshot if form.current_version is not None else None
     version = repository.add_version(db, form, snapshot=snapshot_of(form), published_by=employee_id)
+    _record_publish(db, form, previous, version)
     events.emit(
         db,
         "form.published",
@@ -436,6 +484,8 @@ def restore_version(db: Session, *, form_id: int, number: int, employee: Employe
         {k: v for k, v in f.items() if k in SNAPSHOT_FIELD_ATTRS}
         for f in snapshot.get("fields") or []
     ]
+    # saved by restore_draft's commit, or rolled back with it
+    audit.record(db, "form.version_restored", entity=form, data={"version": number})
     return repository.restore_draft(db, form, sections=snapshot.get("sections"), fields=fields)
 
 
@@ -473,9 +523,14 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
     validate_branching(payload.type, data.get("sections"), fields)
     # an active form is live from creation: version 1 is published with it
     publish = data.get("is_active", True)
+
+    def before_commit(form: Form) -> None:
+        audit.record_created(db, form)
+        if publish:
+            _publish(db, form, employee.id)
+
     return repository.create_form(
-        db, data=data, fields=fields, created_by=employee.id,
-        before_commit=(lambda form: _publish(db, form, employee.id)) if publish else None,
+        db, data=data, fields=fields, created_by=employee.id, before_commit=before_commit,
     )
 
 
@@ -522,7 +577,10 @@ def duplicate_form(db: Session, *, form_id: int, employee: EmployeePrincipal) ->
         {key: copy.deepcopy(getattr(f, key)) for key in _COPIED_FIELD_ATTRS}
         for f in form.fields
     ]
-    return repository.create_form(db, data=data, fields=fields, created_by=employee.id)
+    return repository.create_form(
+        db, data=data, fields=fields, created_by=employee.id,
+        before_commit=lambda copied: audit.record_created(db, copied, data={"copied_from": form.id}),
+    )
 
 
 def rotate_public_token(
@@ -536,6 +594,8 @@ def rotate_public_token(
             status.HTTP_409_CONFLICT,
             "Public link is only available for questionnaires that accept customer submissions",
         )
+    # the token itself is never logged: anyone holding it can answer
+    audit.record(db, "form.public_link_rotated", entity=form)
     return repository.set_public_token(db, form, _new_public_token())
 
 
@@ -545,6 +605,8 @@ def revoke_public_token(
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this form")
+    if form.public_token:
+        audit.record(db, "form.public_link_revoked", entity=form)
     return repository.set_public_token(db, form, None)
 
 
@@ -582,7 +644,12 @@ def update_form(
         if fields is not None
         else [{"section_id": f.section_id, "branching": f.branching} for f in form.fields],
     )
-    return repository.update_form(db, form, data=data, fields=fields)
+    before = audit.snapshot(form)
+    return repository.update_form(
+        db, form, data=data, fields=fields,
+        # draft questions are logged when they are published, not on every save
+        before_commit=lambda f: audit.record_changes(db, f, before),
+    )
 
 
 def delete_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> None:
@@ -600,6 +667,8 @@ def delete_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> No
     # the files cleanup job removes their stored bytes; this is rolled back
     # with everything else if the delete fails
     files.delete_for_form(db, form.id)
+    # rolled back with the delete if it fails
+    audit.record_deleted(db, form)
     # drafts go with the form; a response submitted since the check above
     # still blocks the delete at the foreign key
     if not repository.delete_form(db, form):
@@ -612,10 +681,12 @@ def toggle_active(
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to modify this form")
+    before = audit.snapshot(form)
     if active and has_unpublished_changes(form):
         # going live means going live with the draft
         _publish(db, form, employee.id)
     form.is_active = active
+    audit.record_changes(db, form, before, action="form.activated" if active else "form.deactivated")
     db.commit()
     db.refresh(form)
     return form
@@ -627,6 +698,8 @@ def reveal_form_results(
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_review(employee, form):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to reveal results")
+    if not form.results_revealed:
+        audit.record(db, "form.results_revealed", entity=form)
     form.results_revealed = True
     db.commit()
     db.refresh(form)

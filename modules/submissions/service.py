@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from common.services.text_scoring.scorer import score_text
+from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal, Principal
 from modules.events import service as events
 from modules.forms import access as form_access
@@ -336,6 +337,13 @@ def regrade_submission(db: Session, submission: Submission, *, update_score: boo
     unit_id = submission.employee.unit_id if submission.employee is not None else None
     results_service.replace_values(db, submission, form, result.questions, unit_id=unit_id)
     same = submission.score is not None and abs(submission.score - result.total) < 1e-9
+    if not same and update_score:
+        audit.record(
+            db, "submission.score_changed", entity_type="submission", entity_id=submission.id,
+            organisation_id=submission.form.organisation_id,
+            changes={"score": [submission.score, result.total]},
+            data={"form_id": submission.form_id, "version_id": submission.form_version_id},
+        )
     if same or update_score:
         submission.score = result.total
         submission.scores = result.as_json(form)

@@ -1,4 +1,5 @@
 from modules.assignments.model import *
+from modules.audit.model import *
 from modules.customers.model import *
 from modules.employees.model import *
 from modules.events.model import *
@@ -7,8 +8,9 @@ from modules.files.model import *
 from modules.jobs.model import *
 from modules.keywords.model import *
 from modules.mentions.model import *
-from modules.notification_deliveries.model import *
-from modules.notification_rules.model import *
+from modules.mention_notification_deliveries.model import *
+from modules.mention_notification_rules.model import *
+from modules.notifications.model import *
 from modules.organisations.model import *
 from modules.platform_configs.model import *
 from modules.results.model import *
