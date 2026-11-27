@@ -1,0 +1,6 @@
+{
+  "not_found": "Organisation not found",
+  "admin_only": "Only the organisation admin can edit the organisation",
+  "platform_fields": "Only a platform admin can change: {changed}",
+  "bad_logo": "logo_file_id must be an uploaded logo of this organisation"
+}

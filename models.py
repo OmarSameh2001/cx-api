@@ -19,3 +19,4 @@ from modules.submissions.model import *
 from modules.subscriptions.model import *
 from modules.tenants.model import *
 from modules.units.model import *
+from modules.sso.model import *

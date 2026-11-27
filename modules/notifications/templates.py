@@ -50,6 +50,29 @@ TEMPLATES: dict[str, dict[str, Text]] = {
         "en": Text("New task: {task}", "{task} was assigned to you. It is due {due}."),
         "ar": Text("مهمة جديدة: {task}", "تم إسناد المهمة {task} إليك. موعد التسليم {due}."),
     },
+    # a way into someone's account was added or removed (E1.11)
+    "security.identity_linked": {
+        "en": Text(
+            "{provider} sign-in added",
+            "A {provider} account ({email}) can now be used to sign in to your account. "
+            "If this wasn't you, remove it from your profile and change your password.",
+        ),
+        "ar": Text(
+            "تمت إضافة تسجيل الدخول عبر {provider}",
+            "أصبح بإمكان حساب {provider} ({email}) تسجيل الدخول إلى حسابك. "
+            "إذا لم تكن أنت من قام بذلك، فأزله من ملفك الشخصي وغيّر كلمة المرور.",
+        ),
+    },
+    "security.identity_unlinked": {
+        "en": Text(
+            "{provider} sign-in removed",
+            "Your {provider} account can no longer be used to sign in. If this wasn't you, change your password.",
+        ),
+        "ar": Text(
+            "تمت إزالة تسجيل الدخول عبر {provider}",
+            "لم يعد بإمكان حساب {provider} تسجيل الدخول إلى حسابك. إذا لم تكن أنت من قام بذلك، فغيّر كلمة المرور.",
+        ),
+    },
     "task.overdue": {
         "en": Text("Overdue: {task}", "{task} was due {due} and is not done yet."),
         "ar": Text("متأخرة: {task}", "كان موعد المهمة {task} في {due} ولم تُنجز بعد."),

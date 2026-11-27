@@ -1,6 +1,8 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from common import i18n
 
 
 PrincipalType = Literal["employee", "customer"]
@@ -30,6 +32,8 @@ class EmployeeInfo(BaseModel):
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []
     permissions: list[str] = []
+    # the language saved on the account (None: not chosen yet)
+    locale: Optional[str] = None
 
 
 class EmployeeLoginResponse(BaseModel):
@@ -58,6 +62,7 @@ class EmployeePrincipal(BasePrincipal):
     permissions: list[str] = []
     unit_id: Optional[int] = None
     assigned_unit_ids: list[int] = []
+    locale: Optional[str] = None
 
 
 class CustomerPrincipal(BasePrincipal):
@@ -65,3 +70,22 @@ class CustomerPrincipal(BasePrincipal):
 
 
 Principal = EmployeePrincipal | CustomerPrincipal
+
+
+class PreferencesUpdate(BaseModel):
+    # one of common/i18n LOCALES, or null to follow the browser
+    locale: Optional[str] = None
+
+    @field_validator("locale")
+    @classmethod
+    def _known(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        code = i18n.normalize(value)
+        if code is None or code != value.strip().lower():
+            raise ValueError(f"locale must be one of: {', '.join(i18n.LOCALES)}")
+        return code
+
+
+class Preferences(BaseModel):
+    locale: Optional[str] = None

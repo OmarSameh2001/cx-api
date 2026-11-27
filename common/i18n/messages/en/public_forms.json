@@ -1,0 +1,6 @@
+{
+  "closed": "Form is not accepting submissions",
+  "no_public_link": "This form is not available via public link",
+  "no_customers": "This form does not accept customer submissions",
+  "max_attempts": "You have already submitted this form the maximum allowed times ({max_attempts})"
+}

@@ -1,0 +1,22 @@
+{
+  "not_found": "File not found",
+  "logo_admin_only": "Only the organisation admin can change the logo",
+  "unknown_purpose": "Unknown file purpose {name}",
+  "too_large": "File is too large: the limit is {limit} MB",
+  "type_not_allowed": "Files of type {content_type} are not allowed here",
+  "max_over_hard_cap": "max_mb can't exceed the hard cap of {hard} MB",
+  "answer_needs_form_and_field": "form_id and field_id are required for form answers",
+  "not_a_file_question": "field_id must be a file question of this form",
+  "not_uploaded": "The file hasn't been uploaded yet",
+  "not_uploaded_yet": "The file isn't uploaded yet",
+  "only_finished_replaced": "Only a finished upload can be replaced",
+  "wrong_attachment": "A {purpose} file can't be attached to {attached_type}",
+  "used_elsewhere": "The file is already used elsewhere",
+  "answer_file_missing": "An uploaded file is missing or can't be used for this question; upload it again",
+  "submission_finished": "Files of a finished submission can't be changed",
+  "limits_admin_only": "Only the organisation admin can change file limits",
+  "bad_mime_types": "allowed_types must be MIME types like image/png or image/*",
+  "storage_unavailable": "File storage is unavailable",
+  "kind_not_allowed": "This kind of file can't be uploaded here",
+  "no_variant": "File has no {variant} version"
+}

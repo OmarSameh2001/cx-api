@@ -1,0 +1,9 @@
+{
+  "provider_unavailable": "طريقة تسجيل الدخول هذه غير متاحة",
+  "already_linked": "يوجد حساب {provider} مرتبط بملفك بالفعل. أزله أولًا.",
+  "identity_not_found": "الحساب المرتبط غير موجود",
+  "settings_admin_only": "مسؤول المؤسسة فقط يمكنه تغيير إعدادات تسجيل الدخول",
+  "invalid_domain": "{domain} ليس نطاق بريد إلكتروني صالحًا",
+  "invalid_tenant": "{tenant} ليس معرّف مستأجر Microsoft صالحًا",
+  "too_many_providers": "عدد مقدمي تسجيل الدخول كبير جدًا"
+}

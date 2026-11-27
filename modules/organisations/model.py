@@ -1,7 +1,8 @@
 from datetime import date
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -28,6 +29,10 @@ class Organisation(Base):
     industry: Mapped[Optional[str]] = mapped_column(String(120))
     contact_info: Mapped[Optional[str]] = mapped_column(Text)
     subscription_end: Mapped[Optional[date]] = mapped_column(Date)
+    # who may sign in with Google, Microsoft...; see modules/sso/dto.SignInSettings
+    sign_in_settings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
 
     subscription_plan_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("subscription_plans.id"), index=True

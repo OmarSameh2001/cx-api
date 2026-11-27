@@ -34,6 +34,8 @@ class Employee(Base):
     dob: Mapped[Optional[date]] = mapped_column("DOB", Date)
     gender: Mapped[Optional[str]] = mapped_column(String(16))
     profile_picture: Mapped[Optional[str]] = mapped_column(String(512))
+    # the language the person chose (en, ar...); emails and notifications use it
+    preferred_locale: Mapped[Optional[str]] = mapped_column(String(8))
     refresh_tokens: Mapped[list[str]] = mapped_column(
         ARRAY(String(64)), nullable=False, server_default="{}", default=list
     )

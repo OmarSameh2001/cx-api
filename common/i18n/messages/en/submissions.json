@@ -1,0 +1,19 @@
+{
+  "not_found": "Submission not found",
+  "answer_invalid": "Answer to \"{question}\" {problem}",
+  "own_only": "You can only access your own submissions",
+  "form_archived": "Form is archived",
+  "submitter_not_allowed": "{principal_type}s are not allowed to submit this form",
+  "view_denied": "Not allowed to view this submission",
+  "locked": "Submission is {status}; cannot be modified",
+  "expired": "Submission has expired",
+  "attempts_used": "You have used all {max_attempts} attempt(s) for this form",
+  "form_unpublished": "Form has not been published yet",
+  "draft_expired": "Submission has expired; draft cannot be saved",
+  "reviewers_only": "Only reviewers can reveal results",
+  "reveal_denied": "Not allowed to reveal this submission",
+  "finalized_not_deletable": "Finalized submissions cannot be deleted",
+  "field_required": "Field {id} ({question}) is required",
+  "not_your_unit": "Form is not assigned to your unit",
+  "not_assigned": "Form is not assigned to you"
+}

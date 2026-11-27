@@ -1,0 +1,10 @@
+{
+  "not_found": "Role not found",
+  "permission_not_found": "Permission {permission_id} not found",
+  "permissions_not_found": "Permissions not found: {missing}",
+  "name_taken": "Role name already exists",
+  "system_not_deletable": "System roles cannot be deleted",
+  "in_use": "Role is assigned to employees; reassign before deletion",
+  "permission_exists": "Permission already exists",
+  "system_not_renamable": "System roles cannot be renamed"
+}

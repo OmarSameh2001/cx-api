@@ -1,0 +1,8 @@
+{
+  "not_found": "Unit not found",
+  "id_not_found": "Unit {unit_id} not found",
+  "parent_not_found": "Parent unit not found in this organisation",
+  "own_parent": "A unit cannot be its own parent",
+  "under_own_child": "A unit cannot be moved under one of its own sub-units",
+  "in_use": "This unit is still in use (employees, assignments or sub-units); move them first"
+}

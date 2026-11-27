@@ -30,6 +30,18 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+_dummy_hash: Optional[str] = None
+
+
+def _burn_password_check(password: str) -> None:
+    """Spends the same time as a real check, so how long a failed sign-in
+    takes doesn't reveal whether the email has an account."""
+    global _dummy_hash
+    if _dummy_hash is None:
+        _dummy_hash = hash_password("not-a-real-password")
+    verify_password(password, _dummy_hash)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -120,6 +132,8 @@ def _build_employee_claims(db: Session, employee) -> dict:
         "permissions": permissions,
         "unit_id": employee.unit_id,
         "assigned_unit_ids": assigned_unit_ids,
+        # the language saved on the account, for messages sent to them
+        "locale": getattr(employee, "preferred_locale", None),
     }
 
 
@@ -139,23 +153,19 @@ def _issue_tokens(
     return access_token, refresh_token, expires_in
 
 
-def login_employee(
-    db: Session, *, email: str, password: str, user_agent: Optional[str], ip: Optional[str]
+def issue_session(
+    db: Session,
+    employee,
+    *,
+    user_agent: Optional[str],
+    ip: Optional[str],
+    method: str = "password",
 ):
-    employee = repository.get_employee_by_email(db, email)
-    if employee is None or not verify_password(password, employee.password):
-        # never the email itself (personal data, and often a typo of a real one)
-        _record_failed_login(
-            db, ip, employee, reason="unknown_account" if employee is None else "wrong_password"
-        )
-        raise AuthError("Invalid email or password")
-    if not employee.is_active:
-        audit.record(db, "auth.login_blocked", entity=employee, actor_id=None, ip=ip)
-        db.commit()
-        raise AuthError("Account is disabled", code=status.HTTP_403_FORBIDDEN)
-
+    """Signs an active employee in: records it and issues the usual tokens.
+    Every way of signing in ends here."""
+    data = None if method == "password" else {"method": method}
     # saved by _issue_tokens' commit, with the new session
-    audit.record(db, "auth.login", entity=employee, actor_id=employee.id, ip=ip)
+    audit.record(db, "auth.login", entity=employee, actor_id=employee.id, ip=ip, data=data)
     claims = _build_employee_claims(db, employee)
     access, refresh, expires_in = _issue_tokens(
         db,
@@ -168,16 +178,56 @@ def login_employee(
     return employee, claims, access, refresh, expires_in
 
 
-def _record_failed_login(db: Session, ip: Optional[str], employee, *, reason: str) -> None:
-    """Saved at once: the request fails, so nothing else will commit it."""
+def login_employee(
+    db: Session, *, email: str, password: str, user_agent: Optional[str], ip: Optional[str]
+):
+    employee = repository.get_employee_by_email(db, email)
+    if employee is None:
+        _burn_password_check(password)
+    if employee is None or not verify_password(password, employee.password):
+        # never the email itself (personal data, and often a typo of a real one)
+        record_failed_login(
+            db, ip, employee, reason="unknown_account" if employee is None else "wrong_password"
+        )
+        raise AuthError("Invalid email or password")
+    if not employee.is_active:
+        audit.record(db, "auth.login_blocked", entity=employee, actor_id=None, ip=ip)
+        db.commit()
+        raise AuthError("Account is disabled", code=status.HTTP_403_FORBIDDEN)
+
+    return issue_session(db, employee, user_agent=user_agent, ip=ip)
+
+
+def record_failed_login(
+    db: Session, ip: Optional[str], employee, *, reason: str, method: Optional[str] = None
+) -> None:
+    """Saved at once: the request fails, so nothing else will commit it.
+    Failures of every sign-in method count towards the same per-IP alert."""
     severity = audit.failed_login_severity(db, ip)
+    data = {"reason": reason, **({"method": method} if method else {})}
     if employee is None:
         audit.record(db, "auth.login_failed", organisation_id=None, actor_id=None, ip=ip,
-                     severity=severity, data={"reason": reason})
+                     severity=severity, data=data)
     else:
         audit.record(db, "auth.login_failed", entity=employee, actor_id=None, ip=ip,
-                     severity=severity, data={"reason": reason})
+                     severity=severity, data=data)
     db.commit()
+
+
+def current_session(db: Session, *, employee_id: int):
+    employee = repository.get_employee_by_id(db, employee_id)
+    if employee is None or not employee.is_active:
+        raise AuthError("Account no longer available")
+    return employee, _build_employee_claims(db, employee)
+
+
+def set_preferred_locale(db: Session, *, employee_id: int, locale: Optional[str]) -> Optional[str]:
+    employee = repository.get_employee_by_id(db, employee_id)
+    if employee is None or not employee.is_active:
+        raise AuthError("Account no longer available")
+    employee.preferred_locale = locale
+    db.commit()
+    return locale
 
 
 def refresh_session(

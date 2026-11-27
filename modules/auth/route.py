@@ -4,7 +4,8 @@ import jwt
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from config import AuthEnv
+from common.rate_limit import client_ip, count_failure, enforce, refuse_if_full
+from config import AuthEnv, SSOEnv
 from db import get_db
 
 from . import controller, service
@@ -13,6 +14,8 @@ from .dto import (
     EmployeePrincipal,
     LoginRequest,
     LogoutResponse,
+    Preferences,
+    PreferencesUpdate,
     Principal,
     TokenResponse,
 )
@@ -85,7 +88,18 @@ def employee_login(
     db: Session = Depends(get_db),
     user_agent: Optional[str] = Header(default=None, alias="User-Agent"),
 ):
-    return controller.employee_login(db, payload, response, user_agent, _client_ip(request))
+    # guessing passwords: every attempt counts per IP; per account only the
+    # failures count (so many IPs can't share the work, and signing in often
+    # never locks anyone out)
+    enforce(f"login-ip:{client_ip(request)}", SSOEnv.LOGINS_PER_MINUTE_PER_IP, 60)
+    account = f"login-fail:{payload.email.strip().lower()}"
+    window = SSOEnv.LOGIN_FAILURE_WINDOW_MINUTES * 60
+    refuse_if_full(account, SSOEnv.LOGIN_FAILURES_PER_EMAIL, window)
+    try:
+        return controller.employee_login(db, payload, response, user_agent, _client_ip(request))
+    except service.AuthError:
+        count_failure(account, SSOEnv.LOGIN_FAILURES_PER_EMAIL, window)
+        raise
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -120,3 +134,18 @@ def logout_all(
 @router.get("/me", response_model=Principal)
 def me(principal: Principal = Depends(current_principal)):
     return principal
+
+
+@router.get("/session", response_model=EmployeeLoginResponse)
+def session(db: Session = Depends(get_db), employee: EmployeePrincipal = Depends(current_employee)):
+    """The signed-in employee and their permissions, read fresh."""
+    return controller.session(db, employee)
+
+
+@router.put("/me/preferences", response_model=Preferences)
+def update_preferences(
+    payload: PreferencesUpdate,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.update_preferences(db, employee, payload)

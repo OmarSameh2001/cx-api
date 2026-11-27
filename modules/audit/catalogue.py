@@ -54,6 +54,10 @@ ACTIONS: dict[str, Action] = {
     "auth.login_blocked": Action(S.WARNING, "Sign-in to a disabled account"),
     "auth.logout": Action(S.INFO, "Signed out"),
     "auth.logout_all": Action(S.NOTICE, "Signed out everywhere"),
+    # Google, Microsoft... accounts used to sign in (E1.11)
+    "auth.identity_linked": Action(S.WARNING, "Sign-in account linked"),
+    "auth.identity_unlinked": Action(S.NOTICE, "Sign-in account removed"),
+    "auth.identity_link_failed": Action(S.WARNING, "Linking a sign-in account failed"),
     # --- roles and permissions -------------------------------------------------
     "role.created": Action(S.NOTICE, "Role created"),
     "role.updated": Action(S.NOTICE, "Role changed"),
@@ -71,6 +75,7 @@ ACTIONS: dict[str, Action] = {
     "organisation.created": Action(S.NOTICE, "Organisation created"),
     "organisation.updated": Action(S.NOTICE, "Organisation changed"),
     "organisation.deleted": Action(S.CRITICAL, "Organisation deleted"),
+    "organisation.sign_in_settings_changed": Action(S.WARNING, "Sign-in settings changed"),
     # --- forms -----------------------------------------------------------------
     "form.created": Action(S.INFO, "Form created"),
     "form.updated": Action(S.INFO, "Form settings changed"),

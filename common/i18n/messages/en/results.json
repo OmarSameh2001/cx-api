@@ -1,0 +1,8 @@
+{
+  "key_too_long": "question keys are at most 32 characters",
+  "bad_date_range": "submitted_from must be before submitted_to",
+  "repeated_group_by": "group_by has a repeated entry",
+  "repeated_measures": "measures has a repeated entry",
+  "bad_time_group": "group_by takes one of day, week and month",
+  "view_denied": "Not allowed to view results"
+}

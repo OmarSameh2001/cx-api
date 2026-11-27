@@ -45,6 +45,20 @@ class SlidingWindowLimiter:
             hits.append(now)
             return None
 
+    def blocked(self, key: str, limit: int, window_seconds: float) -> Optional[float]:
+        """Like hit, but records nothing: seconds until a slot frees if the
+        window is full, else None."""
+        now = time.monotonic()
+        with self._lock:
+            hits = self._hits.get(key)
+            if not hits:
+                return None
+            while hits and hits[0] <= now - window_seconds:
+                hits.popleft()
+            if len(hits) >= limit:
+                return hits[0] + window_seconds - now
+            return None
+
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()
@@ -89,6 +103,25 @@ class RedisSlidingWindowLimiter:
             return self._fallback.hit(key, limit, window_seconds)
         return None if result is None else float(result)
 
+    def blocked(self, key: str, limit: int, window_seconds: float) -> Optional[float]:
+        client = get_redis()
+        if client is None:
+            return self._fallback.blocked(key, limit, window_seconds)
+        try:
+            digest = hashlib.blake2b(key.encode(), digest_size=12).hexdigest()
+            name, now = redis_key("rl", digest), time.time()
+            pipe = client.pipeline()
+            pipe.zremrangebyscore(name, "-inf", now - window_seconds)
+            pipe.zcard(name)
+            pipe.zrange(name, 0, 0, withscores=True)
+            _, count, oldest = pipe.execute()
+        except redis.RedisError as exc:
+            logger.warning("rate limit: Redis unavailable, counting in memory ({})", exc)
+            return self._fallback.blocked(key, limit, window_seconds)
+        if count >= limit and oldest:
+            return max(0.0, float(oldest[0][1]) + window_seconds - now)
+        return None
+
     def reset(self) -> None:
         self._fallback.reset()
 
@@ -110,12 +143,29 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _too_many(retry_after: float) -> CodedHTTPException:
+    return CodedHTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "Too many attempts. Please wait a moment and try again.",
+        code="rate_limited",
+        headers={"Retry-After": str(max(1, int(retry_after + 0.999)))},
+    )
+
+
 def enforce(key: str, limit: int, window_seconds: float) -> None:
+    """Counts this request; refuses it (429) when the window is full."""
     retry_after = limiter.hit(key, limit, window_seconds)
     if retry_after is not None:
-        raise CodedHTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Too many attempts. Please wait a moment and try again.",
-            code="rate_limited",
-            headers={"Retry-After": str(max(1, int(retry_after + 0.999)))},
-        )
+        raise _too_many(retry_after)
+
+
+def refuse_if_full(key: str, limit: int, window_seconds: float) -> None:
+    """Refuses (429) when the window is full, without counting this request.
+    With count_failure(), only failures fill it: e.g. wrong passwords."""
+    retry_after = limiter.blocked(key, limit, window_seconds)
+    if retry_after is not None:
+        raise _too_many(retry_after)
+
+
+def count_failure(key: str, limit: int, window_seconds: float) -> None:
+    limiter.hit(key, limit, window_seconds)

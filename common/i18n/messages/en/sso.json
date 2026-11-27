@@ -1,0 +1,9 @@
+{
+  "provider_unavailable": "This sign-in method isn't available",
+  "already_linked": "A {provider} account is already linked to your profile. Remove it first.",
+  "identity_not_found": "Linked account not found",
+  "settings_admin_only": "Only the organisation admin can change sign-in settings",
+  "invalid_domain": "{domain} is not a valid email domain",
+  "invalid_tenant": "{tenant} is not a valid Microsoft tenant ID",
+  "too_many_providers": "too many providers"
+}

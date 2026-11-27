@@ -1,0 +1,10 @@
+{
+  "not_found": "الدور غير موجود",
+  "permission_not_found": "الصلاحية {permission_id} غير موجودة",
+  "permissions_not_found": "صلاحيات غير موجودة: {missing}",
+  "name_taken": "يوجد دور بهذا الاسم بالفعل",
+  "system_not_deletable": "لا يمكن حذف أدوار النظام",
+  "in_use": "الدور مسند إلى موظفين؛ أعد إسنادهم قبل الحذف",
+  "permission_exists": "الصلاحية موجودة بالفعل",
+  "system_not_renamable": "لا يمكن إعادة تسمية أدوار النظام"
+}

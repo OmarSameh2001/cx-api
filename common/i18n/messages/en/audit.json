@@ -1,0 +1,6 @@
+{
+  "no_history": "{entity_type} records have no history",
+  "action_too_long": "actions are at most 48 characters",
+  "entity_id_needs_type": "entity_id needs entity_type",
+  "bad_date_range": "occurred_from must be before occurred_to"
+}

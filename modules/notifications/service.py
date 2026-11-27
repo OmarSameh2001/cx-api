@@ -78,6 +78,7 @@ def notify(
     unknown = set(channels) - {"in_app", *DELIVERY_CHANNELS}
     if unknown:
         raise ValueError(f"unknown channels: {sorted(unknown)}")
+    explicit_locale = locale is not None
     locale = templates.locale_or_default(locale, _default_locale())
     people = repository.recipients(db, organisation_id=organisation_id, employee_ids=recipient_ids)
 
@@ -97,7 +98,10 @@ def notify(
         return NotificationDelivery(
             organisation_id=organisation_id, notification_id=note.id if note else None,
             recipient_id=person.id if person is not None else None, channel=channel, address=address,
-            template=template, params=params or None, link=link, locale=locale, status="pending",
+            template=template, params=params or None, link=link, status="pending",
+            # the language the person chose, else the one asked for
+            locale=templates.locale_or_default(getattr(person, "preferred_locale", None), locale)
+            if person is not None and not explicit_locale else locale,
             attempts=0, next_attempt_at=_now(), created_at=_now(),
         )
 

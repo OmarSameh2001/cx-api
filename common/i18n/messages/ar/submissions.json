@@ -1,0 +1,19 @@
+{
+  "not_found": "الرد غير موجود",
+  "answer_invalid": "الإجابة على \"{question}\" {problem}",
+  "own_only": "يمكنك الوصول إلى ردودك فقط",
+  "form_archived": "النموذج مؤرشف",
+  "submitter_not_allowed": "غير مسموح لـ {principal_type} بإرسال هذا النموذج",
+  "view_denied": "غير مسموح لك بعرض هذا الرد",
+  "locked": "حالة الرد {status}؛ لا يمكن تعديله",
+  "expired": "انتهت مهلة الرد",
+  "attempts_used": "لقد استخدمت كل المحاولات المسموحة ({max_attempts}) لهذا النموذج",
+  "form_unpublished": "لم يُنشر النموذج بعد",
+  "draft_expired": "انتهت مهلة الرد؛ لا يمكن حفظ المسودة",
+  "reviewers_only": "المراجعون فقط يمكنهم إظهار النتائج",
+  "reveal_denied": "غير مسموح لك بإظهار هذا الرد",
+  "finalized_not_deletable": "لا يمكن حذف الردود المكتملة",
+  "field_required": "السؤال {id} ({question}) مطلوب",
+  "not_your_unit": "النموذج غير مسند إلى وحدتك",
+  "not_assigned": "النموذج غير مسند إليك"
+}

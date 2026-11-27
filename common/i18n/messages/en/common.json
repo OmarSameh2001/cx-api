@@ -1,0 +1,5 @@
+{
+  "not_found": "Not Found",
+  "rate_limited": "Too many attempts. Please wait a moment and try again.",
+  "server_error": "Something went wrong on our side. Please try again."
+}

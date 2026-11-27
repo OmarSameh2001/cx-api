@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import models  # noqa: F401  -- register all SQLAlchemy mappers
-from common.errors import CodedHTTPException, coded_http_exception_handler
+from common.errors import http_exception_handler, validation_exception_handler
 from common.middleware import AuthenticationMiddleware, BodySizeLimitMiddleware, RequestContextMiddleware
 from db import engine
 from modules.assignments.route import router as assignments_router
@@ -24,6 +26,7 @@ from modules.shared.lookup.route import router as lookups_router
 from modules.submissions.route import router as submissions_router
 from modules.units.route import router as units_router
 from modules.ai.route import router as ai_router
+from modules.sso.route import PUBLIC_PATTERNS as SSO_PUBLIC_PATTERNS, router as sso_router
 
 
 @asynccontextmanager
@@ -34,9 +37,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="cx-api", lifespan=lifespan)
-app.add_exception_handler(CodedHTTPException, coded_http_exception_handler)
+# every error in the caller's language, with a stable code (common/i18n)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
-app.add_middleware(AuthenticationMiddleware, public_prefixes=["/public/", "/internal/"])
+app.add_middleware(
+    AuthenticationMiddleware,
+    public_prefixes=["/public/", "/internal/"],
+    public_patterns=SSO_PUBLIC_PATTERNS,
+)
 # answers are small; cap what respondents can send (inside CORS so a 413 still
 # carries CORS headers the browser can read)
 app.add_middleware(
@@ -50,12 +59,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "Content-Language"],
 )
 # outermost: every request, refused ones included, gets a correlation ID
 app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
+app.include_router(sso_router)
 app.include_router(employees_router)
 app.include_router(forms_router)
 app.include_router(submissions_router)

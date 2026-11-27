@@ -1,0 +1,4 @@
+{
+  "unavailable": "The AI service is unavailable right now. Please try again in a moment.",
+  "generation_failed": "The AI couldn't produce a valid result. Try rephrasing your request."
+}

@@ -1,0 +1,22 @@
+{
+  "not_found": "الملف غير موجود",
+  "logo_admin_only": "مسؤول المؤسسة فقط يمكنه تغيير الشعار",
+  "unknown_purpose": "غرض الملف غير معروف: {name}",
+  "too_large": "الملف كبير جدًا: الحد الأقصى {limit} ميغابايت",
+  "type_not_allowed": "الملفات من نوع {content_type} غير مسموح بها هنا",
+  "max_over_hard_cap": "لا يمكن أن يتجاوز الحجم الأقصى الحد الثابت البالغ {hard} ميغابايت",
+  "answer_needs_form_and_field": "يلزم تحديد النموذج والسؤال لإجابات النماذج",
+  "not_a_file_question": "يجب أن يكون السؤال من نوع رفع ملف في هذا النموذج",
+  "not_uploaded": "لم يُرفع الملف بعد",
+  "not_uploaded_yet": "لم يُرفع الملف بعد",
+  "only_finished_replaced": "يمكن استبدال الملفات المرفوعة بالكامل فقط",
+  "wrong_attachment": "لا يمكن إرفاق ملف من نوع {purpose} بـ {attached_type}",
+  "used_elsewhere": "الملف مستخدم في مكان آخر بالفعل",
+  "answer_file_missing": "أحد الملفات المرفوعة مفقود أو لا يمكن استخدامه لهذا السؤال؛ ارفعه مرة أخرى",
+  "submission_finished": "لا يمكن تغيير ملفات رد مكتمل",
+  "limits_admin_only": "مسؤول المؤسسة فقط يمكنه تغيير حدود الملفات",
+  "bad_mime_types": "يجب أن تكون الأنواع المسموح بها أنواع MIME مثل image/png أو image/*",
+  "storage_unavailable": "تخزين الملفات غير متاح",
+  "kind_not_allowed": "لا يمكن رفع هذا النوع من الملفات هنا",
+  "no_variant": "لا توجد نسخة {variant} من هذا الملف"
+}

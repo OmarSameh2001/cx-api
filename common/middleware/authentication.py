@@ -1,3 +1,4 @@
+import re
 from typing import Iterable, Optional
 
 import jwt
@@ -6,7 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
-from common import request_context
+from common import i18n, request_context
 from config import AuthEnv
 
 
@@ -25,7 +26,8 @@ DEFAULT_PUBLIC_PATHS: tuple[str, ...] = (
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     """Validates the JWT access token on every request before routing.
 
-    Errors:
+    Errors (the code stays the same in every language; the detail is in the
+    caller's):
       401 token_missing      — no Authorization header and no access cookie
       401 token_malformed    — decode failed (not a JWT / wrong segments)
       401 token_invalid      — signature or claim (issuer/type) mismatch
@@ -37,15 +39,19 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         app: ASGIApp,
         public_paths: Optional[Iterable[str]] = None,
         public_prefixes: Optional[Iterable[str]] = None,
+        public_patterns: Optional[Iterable[str]] = None,
     ):
         super().__init__(app)
         self.public_paths = set(public_paths if public_paths is not None else DEFAULT_PUBLIC_PATHS)
         self.public_prefixes = tuple(public_prefixes or ())
+        self.public_patterns = tuple(re.compile(p) for p in (public_patterns or ()))
 
     def _is_public(self, path: str) -> bool:
         if path in self.public_paths:
             return True
-        return any(path.startswith(prefix) for prefix in self.public_prefixes)
+        if any(path.startswith(prefix) for prefix in self.public_prefixes):
+            return True
+        return any(p.fullmatch(path) for p in self.public_patterns)
 
     def _extract_token(self, request: Request) -> Optional[str]:
         auth = request.headers.get("authorization")
@@ -62,7 +68,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         token = self._extract_token(request)
         if not token:
-            return _error(401, "token_missing", "Missing access token")
+            return _error(request, "token_missing", "auth.missing_access_token")
 
         try:
             payload = jwt.decode(
@@ -72,16 +78,16 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 issuer=AuthEnv.JWT_ISSUER,
             )
         except jwt.ExpiredSignatureError:
-            return _error(401, "token_expired", "Access token has expired")
+            return _error(request, "token_expired", "auth.token_expired")
         except jwt.InvalidSignatureError:
-            return _error(401, "token_invalid", "Access token signature is invalid")
+            return _error(request, "token_invalid", "auth.token_invalid_signature")
         except jwt.DecodeError:
-            return _error(401, "token_malformed", "Access token is malformed")
+            return _error(request, "token_malformed", "auth.token_malformed")
         except jwt.InvalidTokenError as e:
-            return _error(401, "token_invalid", f"Invalid access token: {e}")
+            return _error(request, "token_invalid", "auth.invalid_access_token", error=str(e))
 
         if payload.get("typ") != "access":
-            return _error(401, "token_invalid", "Wrong token type")
+            return _error(request, "token_invalid", "auth.token_wrong_type")
 
         request.state.principal = payload
         if payload.get("principal") == "employee":
@@ -89,9 +95,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
+def _error(request: Request, code: str, message: str, **params) -> JSONResponse:
+    locale = i18n.request_locale(request)
     return JSONResponse(
-        status_code=status_code,
-        content={"error": code, "detail": message},
-        headers={"WWW-Authenticate": "Bearer"},
+        status_code=401,
+        content={"error": code, "detail": i18n.t(message, locale, **params)},
+        headers={"WWW-Authenticate": "Bearer", "Content-Language": locale},
     )

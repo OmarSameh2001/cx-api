@@ -9,8 +9,11 @@ from . import service
 from .dto import (
     EmployeeInfo,
     EmployeeLoginResponse,
+    EmployeePrincipal,
     LoginRequest,
     LogoutResponse,
+    Preferences,
+    PreferencesUpdate,
     Principal,
     TokenResponse,
 )
@@ -64,19 +67,13 @@ def _clear_access_cookie(response: Response) -> None:
     )
 
 
-def employee_login(
-    db: Session,
-    payload: LoginRequest,
-    response: Response,
-    user_agent: Optional[str],
-    ip: Optional[str],
-) -> EmployeeLoginResponse:
-    employee, claims, access, refresh, expires_in = service.login_employee(
-        db, email=payload.email, password=payload.password, user_agent=user_agent, ip=ip
-    )
+def set_session_cookies(response: Response, access: str, refresh: str) -> None:
     _set_refresh_cookie(response, refresh)
     _set_access_cookie(response, access)
-    user = EmployeeInfo(
+
+
+def employee_info(employee, claims: dict) -> EmployeeInfo:
+    return EmployeeInfo(
         id=employee.id,
         organisation_id=employee.organisation_id,
         first_name=employee.first_name,
@@ -89,8 +86,34 @@ def employee_login(
         unit_id=claims.get("unit_id"),
         assigned_unit_ids=claims.get("assigned_unit_ids", []),
         permissions=claims.get("permissions", []),
+        locale=claims.get("locale"),
     )
-    return EmployeeLoginResponse(user=user)
+
+
+def employee_login(
+    db: Session,
+    payload: LoginRequest,
+    response: Response,
+    user_agent: Optional[str],
+    ip: Optional[str],
+) -> EmployeeLoginResponse:
+    employee, claims, access, refresh, expires_in = service.login_employee(
+        db, email=payload.email, password=payload.password, user_agent=user_agent, ip=ip
+    )
+    set_session_cookies(response, access, refresh)
+    return EmployeeLoginResponse(user=employee_info(employee, claims))
+
+
+def session(db: Session, principal: EmployeePrincipal) -> EmployeeLoginResponse:
+    """The signed-in employee, read fresh (after signing in with Google or
+    Microsoft, the frontend has nothing else to go on)."""
+    employee, claims = service.current_session(db, employee_id=principal.id)
+    return EmployeeLoginResponse(user=employee_info(employee, claims))
+
+
+def update_preferences(db: Session, principal: EmployeePrincipal, payload: PreferencesUpdate) -> Preferences:
+    locale = service.set_preferred_locale(db, employee_id=principal.id, locale=payload.locale)
+    return Preferences(locale=locale)
 
 
 def refresh(
