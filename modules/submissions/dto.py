@@ -125,7 +125,9 @@ class RespondentField(BaseModel):
     help_text: Optional[str] = None
     is_required: bool
     section_id: Optional[int] = None
-    branching: Optional[dict[str, SectionTarget]] = None
+    # what rules call the question, and the rule that shows it (E2.3)
+    key: Optional[str] = None
+    visible_if: Optional[Any] = None
     config: Optional[dict[str, Any]] = None
 
     @field_validator("config")
@@ -141,6 +143,14 @@ class RespondentSection(BaseModel):
     description: Optional[str] = None
     order: int = 0
     next_section_id: Optional[SectionTarget] = None
+    # tried in order after the section (old branching comes as routes too);
+    # filled in by forms.logic.for_respondent
+    routes: list[dict[str, Any]] = []
+
+    @field_validator("routes", mode="before")
+    @classmethod
+    def _none_is_empty(cls, v):
+        return v or []
 
 
 class RespondentForm(BaseModel):
@@ -161,6 +171,8 @@ class RespondentForm(BaseModel):
     # E2.2: filled in from the form's settings by respondent_extras
     show_progress: bool = False
     anonymous: bool = False
+    # the prefilled link's hidden values that the form's rules read (E2.3)
+    hidden: dict[str, Any] = {}
 
     @field_validator("theme", mode="before")
     @classmethod

@@ -545,15 +545,29 @@ def _fold_legacy_settings(data: Any) -> Any:
     return data
 
 
+class SectionRoute(BaseModel):
+    """After a section: when `when` (a rule, see modules/forms/logic.py)
+    holds, go to `to`. A section's routes are tried in order (E2.3)."""
+    model_config = ConfigDict(extra="forbid")
+    when: Any
+    to: SectionTarget
+
+
+# a field key: the server makes one for a question saved without it
+FieldKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,32}$")]
+
+
 class FormSectionPayload(BaseModel):
     id: int
     title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
     order: int = 0
     score_weight: float = Field(default=1.0, gt=0)
-    # where to go after this section when no branching answer applies;
+    # where to go after this section when no route applies;
     # None means the next section by order
     next_section_id: Optional[SectionTarget] = None
+    # tried in order after the section; the first that holds decides (E2.3)
+    routes: Optional[list[SectionRoute]] = Field(default=None, max_length=50)
 
 
 class FormFieldBase(BaseModel):
@@ -567,8 +581,11 @@ class FormFieldBase(BaseModel):
     is_required: bool = False
     score_weight: float = 0.0
     section_id: Optional[int] = None
-    # answer -> section to jump to; only for single_choice, dropdown and boolean
+    # legacy: answer -> section to jump to; only for single_choice, dropdown
+    # and boolean. Saved as its section's routes (E2.3)
     branching: Optional[dict[str, SectionTarget]] = None
+    # the rule that shows the question; None: always (E2.3, forms/logic.py)
+    visible_if: Optional[Any] = None
     # per-type settings; see QUESTION_CONFIG_SCHEMAS
     config: Optional[dict[str, Any]] = None
 
@@ -577,6 +594,9 @@ class FormFieldCreate(FormFieldBase):
     # on update: existing field id to edit in place; omit for a new field.
     # An existing field sent without `config` keeps the config it has.
     id: Optional[int] = None
+    # a new question's key, so rules saved with it can name it; an existing
+    # question keeps its own
+    key: Optional[FieldKey] = None
 
     # The rules below run on writes only. FormFieldRead serves what is stored,
     # so a row that predates a rule (or was fixed by hand) can't break reads.

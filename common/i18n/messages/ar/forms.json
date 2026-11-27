@@ -59,5 +59,14 @@
   "dates_need_zone": "يحتاج opens_at و closes_at إلى منطقة زمنية (مثل 2026-12-01T09:00:00Z)",
   "closes_before_opens": "يجب أن يكون closes_at بعد opens_at",
   "ending_ids_unique": "يجب ألا تتكرر أرقام شاشات النهاية",
-  "hidden_keys_unique": "يجب ألا تتكرر مفاتيح الحقول المخفية"
+  "hidden_keys_unique": "يجب ألا تتكرر مفاتيح الحقول المخفية",
+  "logic_questionnaires_only": "إظهار الأسئلة أو إخفاؤها متاح في الاستبيانات فقط",
+  "duplicate_field_keys": "يوجد سؤالان بالمفتاح نفسه",
+  "field_key_taken": "مفتاح السؤال {key} مستخدم في سؤال آخر",
+  "rule_invalid": "الشرط على \"{where}\" غير صالح: {problem}",
+  "rule_dynamic_reference": "يجب أن يحدد الشرط على \"{where}\" الأسئلة التي يقرؤها",
+  "rule_unknown_reference": "الشرط على \"{where}\" يقرأ ما لا يمكنه قراءته: {ref}",
+  "rule_unknown_hidden": "الشرط على \"{where}\" يقرأ الحقل المخفي \"{name}\" وهو غير معرّف في النموذج",
+  "rule_reads_later_question": "لا يمكن للشرط على \"{where}\" أن يقرأ إلا الأسئلة التي تسبقه (وليس {key})",
+  "too_many_routes": "لا يمكن أن يحتوي القسم \"{section}\" على أكثر من {max} مسارًا"
 }

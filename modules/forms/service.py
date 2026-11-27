@@ -14,7 +14,7 @@ from modules.auth.dto import EmployeePrincipal
 from modules.events import service as events
 from modules.units import repository as units_repository
 
-from . import access, repository
+from . import access, logic, repository
 from .dto import (
     LEGACY_SETTING_KEYS,
     media_ids_in_config,
@@ -32,7 +32,7 @@ from .dto import (
     stored_settings,
     DiffPart,
 )
-from .model import SNAPSHOT_FIELD_ATTRS, Form, FormVersion, PublishedForm, VersionField
+from .model import SNAPSHOT_FIELD_ATTRS, Form, FormVersion, PublishedForm, VersionField, new_field_key
 
 
 def _new_public_token() -> str:
@@ -62,9 +62,9 @@ def _ensure_creator_can_delete(form: Form, employee_id: int) -> None:
 
 
 def ordered_sections(sections: list[dict]) -> list[dict]:
-    """Canonical section order, shared by branching validation and the
-    submission path walk so both agree on what "forward" means."""
-    return sorted(sections, key=lambda s: (s.get("order", 0), s["id"]))
+    """Canonical section order, shared by the logic checks and the
+    respondent's path (forms/logic.py) so both agree on what "forward" means."""
+    return logic.ordered_sections(sections)
 
 
 def branch_key(field_type: str, value: Any) -> str:
@@ -137,6 +137,81 @@ def validate_branching(
     for s in sections:
         if s.get("next_section_id") is not None:
             check_target(s["id"], s["next_section_id"])
+
+
+def _hidden_keys(settings: Optional[dict]) -> set[str]:
+    """The hidden fields (T2.2.7) a form's settings declare."""
+    return {
+        h["key"] for h in (settings or {}).get("hidden_fields") or []
+        if isinstance(h, dict) and isinstance(h.get("key"), str)
+    }
+
+
+def _logic_row(f) -> dict:
+    """What the logic checks need of a saved field."""
+    return {
+        "id": f.id, "key": f.key, "question": f.question, "type": f.type, "order": f.order,
+        "section_id": f.section_id, "visible_if": f.visible_if,
+    }
+
+
+class _Row:
+    """A field row read like a field, for logic.legacy_routes."""
+
+    def __init__(self, row: dict):
+        self.id = row.get("id") or 0
+        self.key = row.get("key")
+        self.type = row.get("type")
+        self.order = row.get("order") or 0
+        self.section_id = row.get("section_id")
+        self.branching = row.get("branching")
+
+
+def _apply_logic(
+    form_type: str, sections: Optional[list[dict]], fields: list[dict], *, existing, settings: Optional[dict],
+) -> Optional[list[dict]]:
+    """Gets field rows and sections ready to save with their logic (E2.3):
+    every question gets its key (a question whose type changes gets a new
+    one, and rules follow it), old branching becomes its section's routes,
+    and the rules are checked. Returns the sections to save; the rows are
+    changed in place."""
+    by_id = {f.id: f for f in existing}
+    taken = {f.key for f in existing}
+    renamed: dict[str, str] = {}
+    for row in fields:
+        old = by_id.get(row.get("id"))
+        if old is not None:
+            # sent without a rule: it keeps the one it has
+            row.setdefault("visible_if", copy.deepcopy(old.visible_if))
+            key = old.key
+            if row.get("type", old.type) != old.type:
+                renamed[key] = key = new_field_key()
+            row["key"] = key
+        elif row.get("key"):
+            # a new question can't take a key another one has (or just had)
+            if row["key"] in taken:
+                raise AppError(422, "forms.field_key_taken", key=row["key"])
+            # nor one a question earlier in the same save brought
+            taken.add(row["key"])
+        else:
+            row["key"] = new_field_key()
+    sections = copy.deepcopy(sections) if sections else sections
+    if renamed:
+        for row in fields:
+            row["visible_if"] = logic.rewrite_keys(row.get("visible_if"), renamed)
+        for s in sections or []:
+            for route in s.get("routes") or []:
+                route["when"] = logic.rewrite_keys(route.get("when"), renamed)
+    rows = [_Row(r) for r in fields]
+    for s in sections or []:
+        if s.get("routes") is None:
+            legacy = logic.legacy_routes(s["id"], rows)
+            if legacy:
+                s["routes"] = legacy
+    for row in fields:
+        row["branching"] = None
+    logic.validate_logic(form_type, sections, fields, _hidden_keys(settings))
+    return sections
 
 
 def has_submissions(db: Session, form: Form) -> bool:
@@ -242,6 +317,7 @@ def snapshot_of(form: Form) -> dict:
 
 _SECTION_DEFAULTS = {
     "title": None, "description": None, "order": 0, "score_weight": 1.0, "next_section_id": None,
+    "routes": None,
 }
 
 
@@ -253,12 +329,18 @@ def _section(s: dict) -> dict:
 
 def _comparable(snapshot: dict) -> dict:
     """A snapshot without what doesn't change what respondents get: field
-    ids (a question restored from an old version gets a new id)."""
+    ids (a question restored from an old version gets a new id), and old
+    branching, read as the routes it means (E2.3)."""
+    fields = [VersionField.from_snapshot(f) for f in snapshot.get("fields") or []]
+    sections = [
+        {**_section(s), "routes": logic.section_routes(s, fields) or None}
+        for s in snapshot.get("sections") or []
+    ]
     return {
         "type": snapshot.get("type"),
-        "sections": sorted((_section(s) for s in snapshot.get("sections") or []), key=lambda s: s["id"]),
+        "sections": sorted(sections, key=lambda s: s["id"]),
         "fields": sorted(
-            ({k: v for k, v in f.items() if k != "id"} for f in snapshot.get("fields") or []),
+            ({k: v for k, v in f.items() if k not in ("id", "branching")} for f in snapshot.get("fields") or []),
             key=lambda f: f.get("key") or "",
         ),
     }
@@ -526,13 +608,15 @@ def _remap_media(value: Any, copies: dict[int, int]) -> Any:
 
 def _field_rows(fields: list[FormFieldCreate]) -> list[dict]:
     """Field payloads as repository rows. An existing field sent without
-    `config` keeps its config, so a client that doesn't know about config
-    can't wipe it."""
+    `config` or `visible_if` keeps its own, so a client that doesn't know
+    about them can't wipe them."""
     rows = []
     for f in fields:
         row = f.model_dump()
-        if f.id is not None and "config" not in f.model_fields_set:
-            row.pop("config")
+        if f.id is not None:
+            for kept in ("config", "visible_if"):
+                if kept not in f.model_fields_set:
+                    row.pop(kept)
         rows.append(row)
     return rows
 
@@ -569,6 +653,9 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
         data["public_token"] = _new_public_token()
     fields = _field_rows(payload.fields)
     validate_branching(payload.type, data.get("sections"), fields)
+    data["sections"] = _apply_logic(
+        payload.type, data.get("sections"), fields, existing=[], settings=data["settings"],
+    )
     # an active form is live from creation: version 1 is published with it
     publish = data.get("is_active", True)
 
@@ -605,7 +692,10 @@ _COPIED_FIELD_ATTRS = (
     "score_weight",
     "section_id",
     "branching",
+    "visible_if",
     "config",
+    # rules name questions by key: the copy keeps them
+    "key",
 )
 
 
@@ -695,19 +785,33 @@ def update_form(
     if payload.sections is not None:
         # exclude_unset is recursive; store sections with their defaults filled in
         data["sections"] = [s.model_dump() for s in payload.sections]
+        # a section sent without `routes` keeps its own (E2.3)
+        stored = {s["id"]: s for s in form.sections or []}
+        for sent, row in zip(payload.sections, data["sections"]):
+            if "routes" not in sent.model_fields_set and row["id"] in stored:
+                row["routes"] = copy.deepcopy(stored[row["id"]].get("routes"))
     if "settings" in data:
         if payload.settings is None:
             raise AppError(422, "forms.settings_null")
         data["settings"] = _merged_settings(form, payload.settings)
         _ensure_settings_people(db, data["settings"], employee.organisation_id)
     fields = _field_rows(payload.fields) if payload.fields is not None else None
+    form_type = data.get("type") or form.type
+    sections = data["sections"] if "sections" in data else form.sections
     validate_branching(
-        data.get("type") or form.type,
-        data["sections"] if "sections" in data else form.sections,
+        form_type,
+        sections,
         fields
         if fields is not None
         else [{"section_id": f.section_id, "branching": f.branching} for f in form.fields],
     )
+    settings = data["settings"] if "settings" in data else form.settings
+    if fields is not None:
+        converted = _apply_logic(form_type, sections, fields, existing=form.fields, settings=settings)
+        if converted != sections:
+            data["sections"] = converted
+    else:
+        logic.validate_logic(form_type, sections, [_logic_row(f) for f in form.fields], _hidden_keys(settings))
     before = audit.snapshot(form)
     media = _media_ids(fields, data.get("settings"))
 

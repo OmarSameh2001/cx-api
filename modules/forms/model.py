@@ -124,7 +124,11 @@ class FormField(Base):
 
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)
     section_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # legacy answer -> section jumps; read as section routes (forms/logic.py)
+    # and cleared on the next save
     branching: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # the rule that shows this question (E2.3); null: always shown
+    visible_if: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     # per-type settings, validated by QUESTION_CONFIG_SCHEMAS (dto) on write
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
@@ -150,7 +154,7 @@ class FormVersion(Base):
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     # {"type", "sections", "fields": [{id, key, question, type, options,
     # right_answer, order, help_text, is_required, score_weight, section_id,
-    # branching, config}]}, built by forms.service.snapshot_of
+    # branching, visible_if, config}]}, built by forms.service.snapshot_of
     snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -164,7 +168,7 @@ class FormVersion(Base):
 
 SNAPSHOT_FIELD_ATTRS = (
     "id", "key", "question", "type", "options", "right_answer", "order", "help_text",
-    "is_required", "score_weight", "section_id", "branching", "config",
+    "is_required", "score_weight", "section_id", "branching", "visible_if", "config",
 )
 
 
@@ -183,6 +187,7 @@ class VersionField:
     score_weight: float = 0.0
     section_id: Optional[int] = None
     branching: Optional[dict] = None
+    visible_if: Any = None
     config: Optional[dict] = None
 
     @classmethod

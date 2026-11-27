@@ -25,8 +25,8 @@ from modules.submissions.service import (
     _answerable_ids,
     _prune_to_path,
     _validate_required,
-    _visited_section_ids,
-    grade,
+    grade_path,
+    path_of,
     record_results,
 )
 
@@ -75,13 +75,14 @@ def get_public_form(db: Session, token: str) -> PublishedForm:
 # --- what the respondent is served -------------------------------------------------
 
 
-def _serve(db: Session, view, *, order: Optional[dict] = None) -> PublicForm:
-    """A version as respondents get it, with the settings they need and the
-    attempt's order."""
+def _serve(db: Session, view, *, order: Optional[dict] = None, hidden: Optional[dict] = None) -> PublicForm:
+    """A version as respondents get it, with the settings they need, the
+    attempt's order and what its logic needs."""
+    from modules.forms import logic
     from modules.forms.service import media_for
 
     s = behaviour.settings_of(view)
-    read = PublicForm.model_validate(view)
+    read = logic.for_respondent(PublicForm.model_validate(view), view, hidden)
     behaviour.apply_order(read.fields, order)
     window = behaviour.edit_window(view)
     widget = captcha.widget() if s.captcha else None
@@ -115,7 +116,7 @@ def public_form_read(
     seed = behaviour.seed_from_attempt(view.id, attempt)
     seed = seed if seed is not None else behaviour.new_seed()
     order = behaviour.shuffled_order(view, seed)
-    read = _serve(db, view, order=order)
+    read = _serve(db, view, order=order, hidden=filled.hidden if filled else None)
     return read.model_copy(update={
         "attempt": behaviour.attempt_token(view.id, seed) if order else None,
         "prefill_answers": filled.answers if filled else {},
@@ -221,10 +222,11 @@ def submit_public(
     # Everything that can reject the answers runs before any customer is
     # touched, and the customer and the submission are committed together:
     # a rejected submission leaves nothing behind.
-    visited = _visited_section_ids(form, payload.answers)
-    answers = _prune_to_path(form, payload.answers, visited)
+    hidden = draft.hidden_fields if draft is not None else (prefill.hidden if prefill else None)
+    path = path_of(form, payload.answers, hidden)
+    answers = _prune_to_path(form, payload.answers, path)
     validate_answer_values(form, answers)
-    _validate_required(form, answers, visited)
+    _validate_required(form, answers, path)
     actor = PublicActor(form_id=live.id)
     if draft is not None:
         answers, files_used = submissions_service.resolve_keeping_stored(
@@ -252,7 +254,7 @@ def submit_public(
     except AppError:
         db.rollback()
         raise
-    result = grade(form, answers, visited)
+    result = grade_path(form, answers, path)
 
     now = _now()
     if draft is not None:
@@ -281,9 +283,7 @@ def submit_public(
     record_results(db, submission, form, result, unit_id=None)
     submissions_service.attach_answer_files(db, submission, files_used, form)
     submissions_service.emit_finalized_events(db, submission, form)
-    ending = behaviour.pick_ending(
-        form, score=submission.score, last_section_id=behaviour.last_section_on_path(form, visited),
-    )
+    ending = behaviour.pick_ending(form, score=submission.score, last_section_id=path.last_section_id)
     db.commit()
     db.refresh(submission)
     return submission, ending, live
@@ -386,7 +386,7 @@ def get_draft(db: Session, *, token: str, resume_token: str) -> PublicDraft:
     view = as_answered(draft)
     contact = draft.contact if not behaviour.is_anonymous(live) else None
     return PublicDraft(
-        form=_serve(db, view, order=draft.question_order),
+        form=_serve(db, view, order=draft.question_order, hidden=draft.hidden_fields),
         answers=draft.answers or {},
         customer=PublicDraftCustomer(**contact) if contact else None,
         expires_at=draft.expires_at,
@@ -431,7 +431,7 @@ def get_response(db: Session, *, token: str, edit_token: str) -> PublicResponse:
     live = _get_form_for_public(db, token)
     submission = _load_editable(db, live, edit_token)
     return PublicResponse(
-        form=_serve(db, as_answered(submission), order=submission.question_order),
+        form=_serve(db, as_answered(submission), order=submission.question_order, hidden=submission.hidden_fields),
         answers=submission.answers or {},
         editable_until=behaviour.editable_until(submission.form, submission),
     )

@@ -302,7 +302,7 @@ def test_public_link_hides_score_weights_and_undeclared_config(client, monkeypat
     res = client.get("/public/forms/tok")
     assert res.status_code == 200, res.text
     body = res.json()
-    assert set(body["sections"][0]) == {"id", "title", "description", "order", "next_section_id"}
+    assert set(body["sections"][0]) == {"id", "title", "description", "order", "next_section_id", "routes"}
     for leaked in ("score_weight", "right_answer", "secret", "settings", "public_token", "Because of physics"):
         assert leaked not in res.text
     assert body["fields"][-1]["config"] == {"max_mb": 1.0}

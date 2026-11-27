@@ -3,7 +3,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from modules.forms.dto import FormTheme, SectionTarget, respondent_config
+from modules.forms.dto import FormTheme, respondent_config
 from modules.submissions.dto import EndingRead, RespondentSection, _theme_or_none
 
 
@@ -70,7 +70,9 @@ class PublicFormField(BaseModel):
     help_text: Optional[str] = None
     is_required: bool
     section_id: Optional[int] = None
-    branching: Optional[dict[str, SectionTarget]] = None
+    # what rules call the question, and the rule that shows it (E2.3)
+    key: Optional[str] = None
+    visible_if: Optional[Any] = None
     config: Optional[dict[str, Any]] = None
 
     @field_validator("config")
@@ -115,6 +117,8 @@ class PublicForm(BaseModel):
     attempt: Optional[str] = None
     # a prefilled link's starting answers
     prefill_answers: dict[str, Any] = {}
+    # its hidden values that the form's rules read (E2.3)
+    hidden: dict[str, Any] = {}
 
     @field_validator("theme", mode="before")
     @classmethod

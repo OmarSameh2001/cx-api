@@ -1,0 +1,389 @@
+{
+  "$comment": "E2.3: examples both form-logic evaluators must agree on: cx-api/modules/forms/logic.py (tests/test_form_logic.py) and cx-front/utils/form/logic.ts (e2e/form-logic.spec.ts). A field leaves out what it doesn't need: key defaults to k<id>, type to single_choice, order to 0, section_id, visible_if, branching and config to null. `sections` is the path (null: the form has no sections); `shown` lists the fields shown, by id.",
+  "values": [
+    {"name": "choice text", "field": {"type": "single_choice"}, "raw": "Yes", "value": "Yes"},
+    {"name": "choice not text", "field": {"type": "single_choice"}, "raw": 3, "value": null},
+    {"name": "choice empty", "field": {"type": "dropdown"}, "raw": "", "value": null},
+    {"name": "checkboxes list", "field": {"type": "multi_choice"}, "raw": ["A", "B"], "value": ["A", "B"]},
+    {"name": "checkboxes one text", "field": {"type": "multi_choice"}, "raw": "A", "value": ["A"]},
+    {"name": "checkboxes none", "field": {"type": "multi_choice"}, "raw": [], "value": null},
+    {"name": "checkboxes drop non-text", "field": {"type": "multi_choice"}, "raw": ["A", 2, null], "value": ["A"]},
+    {"name": "checkboxes only non-text", "field": {"type": "multi_choice"}, "raw": [1, 2], "value": null},
+    {"name": "image choice one", "field": {"type": "image_choice"}, "raw": "Cat", "value": "Cat"},
+    {"name": "image choice several", "field": {"type": "image_choice"}, "raw": ["Cat", "Dog"], "value": ["Cat", "Dog"]},
+    {"name": "yes no bool", "field": {"type": "boolean"}, "raw": true, "value": true},
+    {"name": "yes no text", "field": {"type": "boolean"}, "raw": " FALSE ", "value": false},
+    {"name": "yes no other text", "field": {"type": "boolean"}, "raw": "yes", "value": null},
+    {"name": "yes no number", "field": {"type": "boolean"}, "raw": 1, "value": null},
+    {"name": "number", "field": {"type": "number"}, "raw": 6, "value": 6},
+    {"name": "number decimal", "field": {"type": "number"}, "raw": 6.5, "value": 6.5},
+    {"name": "number as text", "field": {"type": "number"}, "raw": " 6.5 ", "value": 6.5},
+    {"name": "number exponent", "field": {"type": "currency"}, "raw": "1e3", "value": 1000},
+    {"name": "number leading dot", "field": {"type": "slider"}, "raw": "-.5", "value": -0.5},
+    {"name": "number hex", "field": {"type": "number"}, "raw": "0x10", "value": null},
+    {"name": "number underscores", "field": {"type": "number"}, "raw": "1_000", "value": null},
+    {"name": "number infinity", "field": {"type": "number"}, "raw": "Infinity", "value": null},
+    {"name": "number words", "field": {"type": "number"}, "raw": "six", "value": null},
+    {"name": "number bool", "field": {"type": "number"}, "raw": true, "value": null},
+    {"name": "number blank text", "field": {"type": "number"}, "raw": "  ", "value": null},
+    {"name": "scale point", "field": {"type": "scale"}, "raw": 4, "value": 4},
+    {"name": "scale not applicable", "field": {"type": "scale"}, "raw": "na", "value": "na"},
+    {"name": "nps has no n/a", "field": {"type": "nps"}, "raw": "na", "value": null},
+    {"name": "rating as text", "field": {"type": "rating"}, "raw": "4", "value": 4},
+    {"name": "grid by row index", "field": {"type": "likert", "config": {"rows": ["Price", "Speed"]}}, "raw": {"Speed": "Good", "Price": ""}, "value": {"1": "Good"}},
+    {"name": "grid checkboxes", "field": {"type": "checkbox_grid", "config": {"rows": ["A", "B"]}}, "raw": {"A": ["x", "y"], "B": []}, "value": {"0": ["x", "y"]}},
+    {"name": "grid unknown row", "field": {"type": "choice_grid", "config": {"rows": ["A"]}}, "raw": {"Z": "x"}, "value": null},
+    {"name": "grid not an object", "field": {"type": "likert", "config": {"rows": ["A"]}}, "raw": "x", "value": null},
+    {"name": "grid row with dots", "field": {"type": "likert", "config": {"rows": ["v1.2", "b"]}}, "raw": {"v1.2": "ok"}, "value": {"0": "ok"}},
+    {"name": "file uploaded", "field": {"type": "file"}, "raw": {"file_id": 3, "name": "a.pdf"}, "value": true},
+    {"name": "file other object", "field": {"type": "file"}, "raw": {"name": "a.pdf"}, "value": null},
+    {"name": "date", "field": {"type": "date"}, "raw": "2026-03-01", "value": "2026-03-01"},
+    {"name": "time", "field": {"type": "time"}, "raw": "09:30", "value": "09:30"},
+    {"name": "text not text", "field": {"type": "text"}, "raw": 5, "value": null},
+    {"name": "long text", "field": {"type": "long_text"}, "raw": "hello", "value": "hello"},
+    {"name": "display block", "field": {"type": "heading"}, "raw": "x", "value": null},
+    {"name": "nothing", "field": {"type": "text"}, "raw": null, "value": null}
+  ],
+  "paths": [
+    {
+      "name": "flat form, no rules",
+      "form": {"fields": [{"id": 1}, {"id": 2, "order": 1}]},
+      "answers": {},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "shown when an earlier answer matches",
+      "form": {"fields": [{"id": 1}, {"id": 2, "order": 1, "visible_if": {"==": [{"var": "q.k1"}, "Yes"]}}]},
+      "answers": {"1": "Yes"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "hidden when it doesn't",
+      "form": {"fields": [{"id": 1}, {"id": 2, "order": 1, "visible_if": {"==": [{"var": "q.k1"}, "Yes"]}}]},
+      "answers": {"1": "No", "2": "kept answer"},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "hidden while unanswered",
+      "form": {"fields": [{"id": 1}, {"id": 2, "order": 1, "visible_if": {"==": [{"var": "q.k1"}, "Yes"]}}]},
+      "answers": {},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "a hidden question's answer reads as null",
+      "form": {"fields": [
+        {"id": 1, "type": "boolean"},
+        {"id": 2, "order": 1, "type": "text", "visible_if": {"==": [{"var": "q.k1"}, true]}},
+        {"id": 3, "order": 2, "type": "text", "visible_if": {"not": {"empty": {"var": "q.k2"}}}}
+      ]},
+      "answers": {"1": false, "2": "still sent"},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "chain shown all the way",
+      "form": {"fields": [
+        {"id": 1, "type": "boolean"},
+        {"id": 2, "order": 1, "type": "text", "visible_if": {"==": [{"var": "q.k1"}, true]}},
+        {"id": 3, "order": 2, "type": "text", "visible_if": {"not": {"empty": {"var": "q.k2"}}}}
+      ]},
+      "answers": {"1": "true", "2": "something"},
+      "sections": null, "shown": [1, 2, 3]
+    },
+    {
+      "name": "display block shown by a rule",
+      "form": {"fields": [{"id": 1, "type": "nps"}, {"id": 2, "order": 1, "type": "paragraph", "visible_if": {"<=": [{"var": "q.k1"}, 6]}}]},
+      "answers": {"1": "3"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "hidden value from the link",
+      "form": {"fields": [{"id": 1, "type": "text", "visible_if": {"==": [{"var": "hidden.channel"}, "branch"]}}]},
+      "answers": {}, "hidden": {"channel": "branch"},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "hidden value missing",
+      "form": {"fields": [{"id": 1, "type": "text", "visible_if": {"==": [{"var": "hidden.channel"}, "branch"]}}]},
+      "answers": {},
+      "sections": null, "shown": []
+    },
+    {
+      "name": "number range",
+      "form": {"fields": [{"id": 1, "type": "number"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"<=": [7, {"var": "q.k1"}, 9]}}]},
+      "answers": {"1": "8"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "number out of range",
+      "form": {"fields": [{"id": 1, "type": "number"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"<=": [7, {"var": "q.k1"}, 9]}}]},
+      "answers": {"1": 10},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "any of the checkboxes",
+      "form": {"fields": [{"id": 1, "type": "multi_choice"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"any_of": [{"var": "q.k1"}, ["Late", "Rude"]]}}]},
+      "answers": {"1": ["Clean", "Rude"]},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "text contains, any case",
+      "form": {"fields": [{"id": 1, "type": "long_text"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"in": ["refund", {"lower": {"var": "q.k1"}}]}}]},
+      "answers": {"1": "I want a REFUND now"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "date before",
+      "form": {"fields": [{"id": 1, "type": "date"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"<": [{"var": "q.k1"}, "2026-01-01"]}}]},
+      "answers": {"1": "2025-12-31"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "grid row",
+      "form": {"fields": [{"id": 1, "type": "likert", "config": {"rows": ["Price", "Speed"]}}, {"id": 2, "order": 1, "type": "text", "visible_if": {"==": [{"var": "q.k1.1"}, "Poor"]}}]},
+      "answers": {"1": {"Price": "Good", "Speed": "Poor"}},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "default when unanswered",
+      "form": {"fields": [{"id": 1, "type": "text"}, {"id": 2, "order": 1, "type": "text", "visible_if": {"==": [{"var": ["q.k1", "none"]}, "none"]}}]},
+      "answers": {},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "a display block reads as null",
+      "form": {"fields": [{"id": 1, "type": "heading"}, {"id": 2, "order": 1, "visible_if": {"empty": {"var": "q.k1"}}}]},
+      "answers": {"1": "x"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "unknown key reads as null",
+      "form": {"fields": [{"id": 1, "visible_if": {"==": [{"var": "q.nope"}, null]}}]},
+      "answers": {},
+      "sections": null, "shown": [1]
+    },
+    {
+      "name": "a broken rule shows the question",
+      "form": {"fields": [{"id": 1, "visible_if": {"nope": [1]}}]},
+      "answers": {},
+      "sections": null, "shown": [1]
+    },
+    {
+      "$comment": "saving rejects loops; one already stored is cut where it closes (that question reads as hidden), the same way in both evaluators",
+      "name": "a loop is cut where it closes",
+      "form": {"fields": [
+        {"id": 1, "type": "text", "visible_if": {"==": [{"var": "q.k2"}, "x"]}},
+        {"id": 2, "order": 1, "type": "text", "visible_if": {"empty": {"var": "q.k1"}}}
+      ]},
+      "answers": {"1": "y", "2": "x"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "order shown doesn't matter",
+      "form": {"fields": [
+        {"id": 2, "order": 0, "type": "text", "visible_if": {"==": [{"var": "q.k1"}, "Yes"]}},
+        {"id": 1, "order": 5}
+      ]},
+      "answers": {"1": "Yes"},
+      "sections": null, "shown": [1, 2]
+    },
+    {
+      "name": "sections in order",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}],
+        "fields": [{"id": 1, "section_id": 1}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {},
+      "sections": [1, 2], "shown": [1, 2]
+    },
+    {
+      "name": "sections sorted by order then id",
+      "form": {
+        "sections": [{"id": 9, "order": 1}, {"id": 4, "order": 1}, {"id": 7, "order": 0}],
+        "fields": []
+      },
+      "answers": {},
+      "sections": [7, 4, 9], "shown": []
+    },
+    {
+      "name": "old branching still routes",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [
+          {"id": 1, "section_id": 1, "branching": {"B": 3}},
+          {"id": 2, "section_id": 2},
+          {"id": 3, "section_id": 3}
+        ]
+      },
+      "answers": {"1": "B", "2": "skipped answer"},
+      "sections": [1, 3], "shown": [1, 3]
+    },
+    {
+      "name": "old branching with no match goes on",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [{"id": 1, "section_id": 1, "branching": {"B": 3}}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {"1": "A"},
+      "sections": [1, 2, 3], "shown": [1, 2]
+    },
+    {
+      "name": "old yes/no branching",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}],
+        "fields": [{"id": 1, "type": "boolean", "section_id": 1, "branching": {"True": "end"}}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {"1": "true"},
+      "sections": [1], "shown": [1]
+    },
+    {
+      "name": "old branching: the first branching question of the section",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [
+          {"id": 5, "order": 1, "section_id": 1, "branching": {"X": 2}},
+          {"id": 6, "order": 0, "section_id": 1, "branching": {"Y": 3}}
+        ]
+      },
+      "answers": {"5": "X", "6": "Y"},
+      "sections": [1, 3], "shown": [5, 6]
+    },
+    {
+      "name": "routes: the first that holds",
+      "form": {
+        "sections": [
+          {"id": 1, "order": 0, "routes": [
+            {"when": {">=": [{"var": "q.k1"}, 9]}, "to": 3},
+            {"when": {">=": [{"var": "q.k1"}, 7]}, "to": 2}
+          ]},
+          {"id": 2, "order": 1, "next_section_id": "end"},
+          {"id": 3, "order": 2}
+        ],
+        "fields": [{"id": 1, "type": "nps", "section_id": 1}, {"id": 2, "section_id": 2}, {"id": 3, "section_id": 3}]
+      },
+      "answers": {"1": 10},
+      "sections": [1, 3], "shown": [1, 3]
+    },
+    {
+      "name": "routes: then the section's default",
+      "form": {
+        "sections": [
+          {"id": 1, "order": 0, "next_section_id": 3, "routes": [{"when": {">=": [{"var": "q.k1"}, 9]}, "to": 2}]},
+          {"id": 2, "order": 1},
+          {"id": 3, "order": 2}
+        ],
+        "fields": [{"id": 1, "type": "nps", "section_id": 1}]
+      },
+      "answers": {"1": 3},
+      "sections": [1, 3], "shown": [1]
+    },
+    {
+      "name": "routes to the end",
+      "form": {
+        "sections": [
+          {"id": 1, "order": 0, "routes": [{"when": {"==": [{"var": "q.k1"}, "No"]}, "to": "end"}]},
+          {"id": 2, "order": 1}
+        ],
+        "fields": [{"id": 1, "section_id": 1}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {"1": "No"},
+      "sections": [1], "shown": [1]
+    },
+    {
+      "name": "routes replace old branching",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "routes": []}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [{"id": 1, "section_id": 1, "branching": {"B": 3}}]
+      },
+      "answers": {"1": "B"},
+      "sections": [1, 2, 3], "shown": [1]
+    },
+    {
+      "name": "a route reading a hidden question doesn't hold",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "routes": [{"when": {"==": [{"var": "q.k2"}, "x"]}, "to": "end"}]}, {"id": 2, "order": 1}],
+        "fields": [
+          {"id": 1, "type": "boolean", "section_id": 1},
+          {"id": 2, "order": 1, "type": "text", "section_id": 1, "visible_if": {"==": [{"var": "q.k1"}, true]}}
+        ]
+      },
+      "answers": {"1": false, "2": "x"},
+      "sections": [1, 2], "shown": [1]
+    },
+    {
+      "name": "a route can read the section's questions and earlier ones",
+      "form": {
+        "sections": [
+          {"id": 1, "order": 0},
+          {"id": 2, "order": 1, "routes": [{"when": {"and": [{"==": [{"var": "q.k1"}, "A"]}, {"==": [{"var": "q.k2"}, "B"]}]}, "to": "end"}]},
+          {"id": 3, "order": 2}
+        ],
+        "fields": [{"id": 1, "section_id": 1}, {"id": 2, "section_id": 2}, {"id": 3, "section_id": 3}]
+      },
+      "answers": {"1": "A", "2": "B"},
+      "sections": [1, 2], "shown": [1, 2]
+    },
+    {
+      "name": "a route can't read a later section",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "routes": [{"when": {"==": [{"var": "q.k2"}, "x"]}, "to": "end"}]}, {"id": 2, "order": 1}],
+        "fields": [{"id": 1, "section_id": 1}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {"2": "x"},
+      "sections": [1, 2], "shown": [1, 2]
+    },
+    {
+      "name": "a backward route is ignored",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1, "routes": [{"when": true, "to": 1}]}, {"id": 3, "order": 2}],
+        "fields": []
+      },
+      "answers": {},
+      "sections": [1, 2, 3], "shown": []
+    },
+    {
+      "name": "a broken route never holds",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "routes": [{"when": {"nope": 1}, "to": "end"}, "not a route", {"when": true, "to": 3}]}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": []
+      },
+      "answers": {},
+      "sections": [1, 3], "shown": []
+    },
+    {
+      "name": "a question can't read a later section",
+      "form": {
+        "sections": [{"id": 1, "order": 0}, {"id": 2, "order": 1}],
+        "fields": [{"id": 1, "section_id": 1, "visible_if": {"==": [{"var": "q.k2"}, "x"]}}, {"id": 2, "section_id": 2}]
+      },
+      "answers": {"2": "x"},
+      "sections": [1, 2], "shown": [2]
+    },
+    {
+      "name": "skipped sections and questions without one",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "next_section_id": 3}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [{"id": 1, "section_id": 1}, {"id": 2, "section_id": 2}, {"id": 3, "section_id": 3}, {"id": 4}, {"id": 5, "section_id": 99}]
+      },
+      "answers": {},
+      "sections": [1, 3], "shown": [1, 3, 4, 5]
+    },
+    {
+      "name": "a question on a skipped section reads as null",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "next_section_id": 3}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": [{"id": 2, "section_id": 2}, {"id": 3, "section_id": 3, "visible_if": {"empty": {"var": "q.k2"}}}]
+      },
+      "answers": {"2": "skipped"},
+      "sections": [1, 3], "shown": [3]
+    },
+    {
+      "name": "hidden values in a route",
+      "form": {
+        "sections": [{"id": 1, "order": 0, "routes": [{"when": {"==": [{"var": "hidden.branch"}, "Cairo"]}, "to": 3}]}, {"id": 2, "order": 1}, {"id": 3, "order": 2}],
+        "fields": []
+      },
+      "answers": {}, "hidden": {"branch": "Cairo"},
+      "sections": [1, 3], "shown": []
+    }
+  ]
+}

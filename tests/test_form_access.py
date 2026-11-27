@@ -97,7 +97,7 @@ def test_respondent_gets_questions_without_answers(client, stub_submission):
     # nothing that grades or identifies the form's internals
     for leaked in ("right_answer", "score_weight", "public_token", "created_by", "Because of physics"):
         assert leaked not in res.text
-    assert set(body["sections"][0]) == {"id", "title", "description", "order", "next_section_id"}
+    assert set(body["sections"][0]) == {"id", "title", "description", "order", "next_section_id", "routes"}
 
 
 def test_respondent_view_is_owner_only(client, stub_submission):

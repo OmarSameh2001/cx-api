@@ -15,7 +15,9 @@ from modules.forms import behaviour
 from modules.forms import repository as forms_repository
 from modules.forms.dto import DISPLAY_TYPES, EndingScreen, respondent_config
 from modules.forms.model import Form, FormField
-from modules.forms.service import as_answered, branch_key, ordered_sections, published
+from modules.forms import logic
+from modules.forms.logic import Path
+from modules.forms.service import as_answered, published
 from modules.results import service as results_service
 
 from . import repository
@@ -178,69 +180,19 @@ def _required_missing(field: FormField, answers: dict[str, Any]) -> bool:
     return is_incomplete(field, answers.get(str(field.id)))
 
 
-def _visited_section_ids(form: Form, answers: dict[str, Any]) -> Optional[set[int]]:
-    """Walk the sections following branching rules. None means the form has no
-    sections, so every field is on the path."""
-    if not form.sections:
-        return None
-    ordered = ordered_sections(form.sections)
-    position = {s["id"]: i for i, s in enumerate(ordered)}
-    # a section's first branching question (by order, then id) holds its
-    # rules; the form fillers pick the same one
-    rules_by_section: dict[int, tuple[FormField, dict[str, Any]]] = {}
-    for f in sorted(form.fields, key=lambda f: (f.order, f.id)):
-        if f.branching and f.section_id is not None:
-            rules_by_section.setdefault(
-                f.section_id,
-                (f, {branch_key(f.type, k): t for k, t in f.branching.items()}),
-            )
-
-    visited: set[int] = set()
-    i = 0
-    # every step either ends the walk or moves strictly forward
-    while i < len(ordered):
-        section = ordered[i]
-        visited.add(section["id"])
-
-        target = None
-        rule = rules_by_section.get(section["id"])
-        if rule is not None:
-            field, branching = rule
-            answer = answers.get(str(field.id))
-            if answer is not None:
-                target = branching.get(branch_key(field.type, answer))
-        if target is None:
-            target = section.get("next_section_id")
-
-        if target == "end":
-            break
-        if target in position and position[target] > i:
-            i = position[target]
-        else:
-            i += 1
-    return visited
-
-
-def _skipped_field_ids(form: Form, visited: Optional[set[int]]) -> set[str]:
-    """Answer keys of fields on sections the path skipped. Fields not tied to a
-    known section are never skipped."""
-    if visited is None:
-        return set()
-    known = {s["id"] for s in form.sections or []}
-    return {
-        str(f.id)
-        for f in form.fields
-        if f.section_id in known and f.section_id not in visited
-    }
+def path_of(form: Form, answers: Optional[dict[str, Any]], hidden: Optional[dict[str, Any]] = None) -> Path:
+    """Where these answers lead (E2.3): the sections visited and the
+    questions shown. The browser works out the same path (utils/form/logic.ts)."""
+    return logic.walk(form, answers or {}, hidden)
 
 
 def _prune_to_path(
-    form: Form, answers: dict[str, Any], visited: Optional[set[int]]
+    form: Form, answers: dict[str, Any], path: Optional[Path]
 ) -> dict[str, Any]:
-    """Keep only answers to the form's current fields on sections the
-    respondent's path went through. A draft can outlive a structural edit, so
+    """Keep only answers to the form's current questions that the
+    respondent's path showed. A draft can outlive a structural edit, so
     answers to removed fields are dropped too."""
-    keep = _answerable_ids(form) - _skipped_field_ids(form, visited)
+    keep = _answerable_ids(form) - logic.not_shown_ids(form, path)
     return {k: v for k, v in answers.items() if k in keep}
 
 
@@ -250,11 +202,13 @@ def _answerable_ids(form: Form) -> set[str]:
 
 
 def _validate_required(
-    form: Form, answers: dict[str, Any], visited: Optional[set[int]] = None
+    form: Form, answers: dict[str, Any], path: Optional[Path] = None
 ) -> None:
-    skipped = _skipped_field_ids(form, visited)
+    """Required questions the path showed must be answered; skipped and
+    hidden ones needn't be."""
+    not_shown = logic.not_shown_ids(form, path)
     for field in form.fields:
-        if str(field.id) in skipped:
+        if str(field.id) in not_shown:
             continue
         if _required_missing(field, answers):
             raise AppError(422, "submissions.field_required", id=field.id, question=field.question)
@@ -292,23 +246,27 @@ def _earned(field: FormField, answers: dict[str, Any], questions: dict) -> float
 
 
 def grade(
-    form: Form, answers: dict[str, Any], visited: Optional[set[int]] = None
+    form: Form, answers: dict[str, Any], visited: Optional[set[int]] = None,
+    shown: Optional[set[int]] = None,
 ) -> Grade:
+    """The score over the sections `visited` and the questions `shown`
+    (None: all). A hidden question counts as a skipped one (E2.3); other
+    rules for them are T2.4.5."""
     questions: dict[int, tuple[float, float]] = {}
+    gradable = [
+        f for f in form.fields if f.type in AUTO_GRADABLE and (shown is None or f.id in shown)
+    ]
     if not form.sections:
-        total_possible = sum(f.score_weight for f in form.fields if f.type in AUTO_GRADABLE)
+        total_possible = sum(f.score_weight for f in gradable)
         if not total_possible:
             return Grade(total=0.0)
-        earned = sum(
-            _earned(f, answers, questions) for f in form.fields if f.type in AUTO_GRADABLE
-        )
+        earned = sum(_earned(f, answers, questions) for f in gradable)
         return Grade(total=(earned / total_possible) * 100, questions=questions)
 
     # Section-weighted scoring — returns 0–100, over the sections on the path
     gradable_by_section: dict[int, list[FormField]] = {}
-    for f in form.fields:
-        if f.type in AUTO_GRADABLE:
-            gradable_by_section.setdefault(f.section_id, []).append(f)
+    for f in gradable:
+        gradable_by_section.setdefault(f.section_id, []).append(f)
     # only sections with something to grade share the weight, so a section
     # without graded questions can't cap the score below 100
     sections = [
@@ -338,6 +296,10 @@ def _score(
     return grade(form, answers, visited).total
 
 
+def grade_path(form: Form, answers: dict[str, Any], path: Path) -> Grade:
+    return grade(form, answers, path.visited, path.shown)
+
+
 def _unit_of(principal: Optional[Principal]) -> Optional[int]:
     """The unit a signed-in employee's answers count under (see SubmissionValue)."""
     return principal.unit_id if isinstance(principal, EmployeePrincipal) else None
@@ -363,7 +325,7 @@ def regrade_submission(db: Session, submission: Submission, *, update_score: boo
     "same", "changed" (score updated) or "differs" (kept)."""
     form = as_answered(submission)
     answers = submission.answers or {}
-    result = grade(form, answers, _visited_section_ids(form, answers))
+    result = grade_path(form, answers, path_of(form, answers, submission.hidden_fields))
     results_service.replace_values(db, submission, form, result.questions, unit_id=counted_unit(db, submission))
     same = submission.score is not None and abs(submission.score - result.total) < 1e-9
     if not same and update_score:
@@ -682,12 +644,13 @@ def submit_submission(
 
     form = as_answered(submission)
     answers = submission.answers or {}
-    visited = _visited_section_ids(form, answers)
-    final_answers = _prune_to_path(form, answers, visited)
+    path = path_of(form, answers, submission.hidden_fields)
+    final_answers = _prune_to_path(form, answers, path)
     submission.answers = final_answers
     validate_answer_values(form, final_answers)
-    _validate_required(form, final_answers, visited)
-    # files on skipped branches were pruned above, so they are released here
+    _validate_required(form, final_answers, path)
+    # files on skipped branches and hidden questions were pruned above, so
+    # they are released here
     final_answers, used = resolve_file_answers(db, form, final_answers, actor=principal, submission_id=submission.id)
     attach_answer_files(db, submission, used, form)
     submission.answers = final_answers
@@ -696,7 +659,7 @@ def submit_submission(
     is_late = bool(submission.expires_at and now > submission.expires_at)
     submission.status = "late" if is_late else "submitted"
     submission.submitted_at = now
-    record_results(db, submission, form, grade(form, final_answers, visited),
+    record_results(db, submission, form, grade_path(form, final_answers, path),
                    unit_id=_unit_of(principal))
     emit_finalized_events(db, submission, form)
     return repository.save(db, submission)
@@ -852,13 +815,13 @@ def serialize_detail(
     # an owner who may still change a response sees what they answered
     editing = owner and form is not None and behaviour.editable_until(form, submission) is not None
 
-    # A finalized submission's answers were pruned to its path, and the
-    # branching answers sit on visited sections, so the walk recovers the path.
-    # Drafts are left alone: their respondent may still reach later sections.
+    # A finalized submission's answers were pruned to its path, and rules
+    # read only answers on it, so the walk recovers the path. Drafts are
+    # left alone: their respondent may still reach later sections.
     skipped: set[str] = set()
     if form is not None and submission.status in ("submitted", "late"):
-        visited = _visited_section_ids(form, submission.answers or {})
-        skipped = _skipped_field_ids(form, visited)
+        path = path_of(form, submission.answers or {}, submission.hidden_fields)
+        skipped = logic.not_shown_ids(form, path)
 
     fields: list[SubmissionDetailField] = []
     if form is not None:
@@ -921,10 +884,8 @@ def ending_for(submission: Submission) -> Optional[EndingScreen]:
     if submission.status not in ("submitted", "late") or submission.form is None:
         return None
     form = as_answered(submission)
-    visited = _visited_section_ids(form, submission.answers or {})
-    return behaviour.pick_ending(
-        form, score=submission.score, last_section_id=behaviour.last_section_on_path(form, visited),
-    )
+    path = path_of(form, submission.answers or {}, submission.hidden_fields)
+    return behaviour.pick_ending(form, score=submission.score, last_section_id=path.last_section_id)
 
 
 def apply_edit(db: Session, submission: Submission, answers: dict[str, Any], *, actor) -> None:
@@ -938,10 +899,10 @@ def apply_edit(db: Session, submission: Submission, answers: dict[str, Any], *, 
         raise AppError(409, "submissions.edit_window_over")
     behaviour.ensure_taking_responses(submission.form, prefix="submissions", grace=GRACE)
 
-    visited = _visited_section_ids(form, answers or {})
-    final_answers = _prune_to_path(form, answers or {}, visited)
+    path = path_of(form, answers or {}, submission.hidden_fields)
+    final_answers = _prune_to_path(form, answers or {}, path)
     validate_answer_values(form, final_answers)
-    _validate_required(form, final_answers, visited)
+    _validate_required(form, final_answers, path)
     final_answers, used = resolve_keeping_stored(
         db, form, final_answers, stored=submission.answers, actor=actor, submission_id=submission.id,
     )
@@ -950,7 +911,7 @@ def apply_edit(db: Session, submission: Submission, answers: dict[str, Any], *, 
     before = submission.score
     submission.answers = final_answers
     submission.edited_at = _now()
-    result = grade(form, final_answers, visited)
+    result = grade_path(form, final_answers, path)
     submission.score = result.total
     submission.scores = result.as_json(form)
     results_service.replace_values(db, submission, form, result.questions, unit_id=counted_unit(db, submission))

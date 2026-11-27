@@ -190,8 +190,11 @@ def create_form(
 
 
 def _new_field(data: dict) -> FormField:
-    data = {k: v for k, v in data.items() if k != "key"}
-    return FormField(**data, key=new_field_key())
+    # the service gives each new question its key (rules name it); a row
+    # without one gets a fresh key
+    data = dict(data)
+    key = data.pop("key", None) or new_field_key()
+    return FormField(**data, key=key)
 
 
 def set_public_token(db: Session, form: Form, token: Optional[str]) -> Form:
@@ -222,8 +225,9 @@ def update_form(
                 field_id = f.pop("id", None)
                 if field_id is not None and field_id in existing:
                     obj = existing[field_id]
-                    if "type" in f and f["type"] != obj.type:
-                        # answers of another type aren't comparable across versions
+                    if "type" in f and f["type"] != obj.type and "key" not in f:
+                        # answers of another type aren't comparable across
+                        # versions (the service usually picks the new key)
                         obj.key = new_field_key()
                     for key, value in f.items():
                         setattr(obj, key, value)

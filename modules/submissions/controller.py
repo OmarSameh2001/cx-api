@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from common.dto import Page
 from modules.auth.dto import Principal
 
-from modules.forms import behaviour
+from modules.forms import behaviour, logic
 from modules.forms import service as forms_service
 from modules.forms.service import as_answered
 
@@ -83,7 +83,7 @@ def get_respondent_form(
     form, submission = service.get_respondent_form(
         db, submission_id=submission_id, principal=principal
     )
-    read = RespondentForm.model_validate(form)
+    read = logic.for_respondent(RespondentForm.model_validate(form), form, submission.hidden_fields)
     behaviour.apply_order(read.fields, submission.question_order)
     settings = behaviour.settings_of(form)
     return read.model_copy(update={

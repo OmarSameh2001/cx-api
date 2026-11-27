@@ -83,7 +83,7 @@ def test_creating_a_form_publishes_version_one(client, db, monkeypatch, versions
         form = Form(**data, created_by=created_by)
         form.id, form.is_active, form.is_archived = 70, True, False
         form.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        form.fields = [FormField(id=900 + i, key=f"k{i}", **{k: v for k, v in f.items() if k != "id"})
+        form.fields = [FormField(id=900 + i, key=f"k{i}", **{k: v for k, v in f.items() if k not in ("id", "key")})
                        for i, f in enumerate(fields)]
         before_commit(form)
         return form

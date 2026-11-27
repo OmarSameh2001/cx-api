@@ -399,7 +399,7 @@ def test_saving_a_form_attaches_its_pictures(client, monkeypatch, pictures):
 
     def create_form(db, *, data, fields, created_by, before_commit=None):
         form = Form(**data, created_by=created_by, id=41, created_at=START, is_archived=False, is_active=True)
-        form.fields = [FormField(id=900 + i, key=f"n{i}", **{k: v for k, v in f.items() if k != "id"})
+        form.fields = [FormField(id=900 + i, key=f"n{i}", **{k: v for k, v in f.items() if k not in ("id", "key")})
                        for i, f in enumerate(fields)]
         before_commit(form)
         created.append(form)
@@ -493,7 +493,7 @@ def test_duplicating_a_form_copies_its_pictures(client, monkeypatch, pictures):
     def create_form(db, *, data, fields, created_by, before_commit=None):
         copy = Form(**data, id=42, created_by=created_by, created_at=START, is_archived=False)
         copy.is_active = data.get("is_active", False)
-        copy.fields = [FormField(id=950, key="c", **{k: v for k, v in fields[0].items()})]
+        copy.fields = [FormField(id=950, key="c", **{k: v for k, v in fields[0].items() if k != "key"})]
         before_commit(copy)
         made.append(copy)
         return copy

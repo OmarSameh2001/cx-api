@@ -59,5 +59,14 @@
   "dates_need_zone": "opens_at and closes_at need a time zone (e.g. 2026-12-01T09:00:00Z)",
   "closes_before_opens": "closes_at must be after opens_at",
   "ending_ids_unique": "ending ids must be unique",
-  "hidden_keys_unique": "hidden field keys must be unique"
+  "hidden_keys_unique": "hidden field keys must be unique",
+  "logic_questionnaires_only": "Showing or hiding questions is only supported on questionnaires",
+  "duplicate_field_keys": "Two questions share the same key",
+  "field_key_taken": "The question key {key} is already used by another question",
+  "rule_invalid": "The condition on \"{where}\" isn't valid: {problem}",
+  "rule_dynamic_reference": "The condition on \"{where}\" must name the questions it reads",
+  "rule_unknown_reference": "The condition on \"{where}\" reads something it can't: {ref}",
+  "rule_unknown_hidden": "The condition on \"{where}\" reads the hidden field \"{name}\", which the form doesn't declare",
+  "rule_reads_later_question": "The condition on \"{where}\" can only read questions that come before it (not {key})",
+  "too_many_routes": "Section \"{section}\" can have at most {max} routes"
 }
