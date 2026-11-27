@@ -171,18 +171,27 @@ def test_org_admin_can_read_the_catalogue(client, monkeypatch):
     assert client.get("/roles/permissions", headers=org_admin()).status_code == 200
 
 
+def test_only_platform_admin_seeds_the_catalogue(client, db):
+    res = client.post("/roles/permissions/seed", headers=org_admin())
+    assert res.status_code == 403
+    assert db.commits == 0
+
+
 @pytest.mark.parametrize(
     "method, path, body",
     [
         ("post", "/roles/permissions", {"resource": "x", "action": "read"}),
-        ("post", "/roles/permissions/seed", None),
         ("delete", "/roles/permissions/1", None),
     ],
 )
-def test_only_platform_admin_changes_the_catalogue(client, db, method, path, body):
+@pytest.mark.parametrize("who", ["org_admin", "platform"])
+def test_the_catalogue_is_read_only_for_everyone(client, db, method, path, body, who):
+    # endpoints check names written in the code, so adding or deleting a
+    # permission through the API is switched off, for platform admins too
+    headers = org_admin() if who == "org_admin" else platform()
     kwargs = {"json": body} if body is not None else {}
-    res = client.request(method.upper(), path, headers=org_admin(), **kwargs)
-    assert res.status_code == 403
+    res = client.request(method.upper(), path, headers=headers, **kwargs)
+    assert res.status_code in (404, 405, 422)
     assert db.commits == 0
 
 

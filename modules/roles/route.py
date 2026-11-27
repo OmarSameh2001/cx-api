@@ -10,7 +10,7 @@ from modules.auth.route import current_employee
 
 from . import controller
 from .dto import (
-    PermissionCreate,
+    # PermissionCreate,  (create_permission is switched off below)
     PermissionRead,
     RoleCreate,
     RolePermissionsAdd,
@@ -35,17 +35,22 @@ def list_permissions(db: Session = Depends(get_db)):
     return controller.list_permissions(db)
 
 
-@router.post(
-    "/permissions",
-    response_model=PermissionRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_permission(
-    payload: PermissionCreate,
-    db: Session = Depends(get_db),
-    _: EmployeePrincipal = Depends(platform_admin),
-):
-    return controller.create_permission(db, payload)
+# The catalogue is read-only: every endpoint checks a permission name written
+# in the code (permissions.py), so one added through the API would do nothing,
+# and deleting one takes it off every role in every organisation. New
+# permissions ship with the code that checks them (seed creates them).
+# Create and delete are switched off, not removed.
+# @router.post(
+#     "/permissions",
+#     response_model=PermissionRead,
+#     status_code=status.HTTP_201_CREATED,
+# )
+# def create_permission(
+#     payload: PermissionCreate,
+#     db: Session = Depends(get_db),
+#     _: EmployeePrincipal = Depends(platform_admin),
+# ):
+#     return controller.create_permission(db, payload)
 
 
 @router.post("/permissions/seed", response_model=SeedResult)
@@ -56,17 +61,18 @@ def seed_permissions(
     return controller.seed_permissions(db)
 
 
-@router.delete(
-    "/permissions/{permission_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def delete_permission(
-    permission_id: int,
-    db: Session = Depends(get_db),
-    _: EmployeePrincipal = Depends(platform_admin),
-):
-    controller.delete_permission(db, permission_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+# Switched off with create_permission above.
+# @router.delete(
+#     "/permissions/{permission_id}",
+#     status_code=status.HTTP_204_NO_CONTENT,
+# )
+# def delete_permission(
+#     permission_id: int,
+#     db: Session = Depends(get_db),
+#     _: EmployeePrincipal = Depends(platform_admin),
+# ):
+#     controller.delete_permission(db, permission_id)
+#     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ── Roles, scoped to the caller's organisation ───────────────────────────────

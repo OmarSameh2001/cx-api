@@ -11,7 +11,11 @@ def get_employee(db: Session, employee_id: int) -> Optional[Employee]:
 
 
 def get_employee_by_email(db: Session, email: str) -> Optional[Employee]:
-    return db.execute(select(Employee).where(Employee.email == email)).scalar_one_or_none()
+    """An employee with this email, ignoring case: "Ali@x.com" and
+    "ali@x.com" are the same person, so one can't be added beside the other."""
+    return db.execute(
+        select(Employee).where(func.lower(Employee.email) == email.strip().lower()).limit(1)
+    ).scalars().first()
 
 
 def get_employee_by_username(db: Session, username: str) -> Optional[Employee]:

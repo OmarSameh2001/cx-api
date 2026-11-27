@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from config import AuthEnv
@@ -9,7 +9,19 @@ from modules.roles.model import Permission, Role, RolePermission
 
 
 def get_employee_by_email(db: Session, email: str) -> Optional[Employee]:
-    return db.execute(select(Employee).where(Employee.email == email)).scalar_one_or_none()
+    """The account for a sign-in email, ignoring case (people type
+    "Ali@x.com" for "ali@x.com"). An exact match wins; otherwise a
+    case-insensitive one counts only if it's the only one."""
+    email = email.strip()
+    exact = db.execute(select(Employee).where(Employee.email == email)).scalar_one_or_none()
+    if exact is not None:
+        return exact
+    matches = list(
+        db.execute(
+            select(Employee).where(func.lower(Employee.email) == email.lower()).limit(2)
+        ).scalars()
+    )
+    return matches[0] if len(matches) == 1 else None
 
 
 def get_employee_by_id(db: Session, employee_id: int) -> Optional[Employee]:
