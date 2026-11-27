@@ -27,3 +27,10 @@ if _samesite not in ("lax", "strict", "none"):
     _samesite = "lax"
 COOKIE_SAMESITE = cast(SameSite, _samesite)
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
+
+# How many proxies in front of the API add an X-Forwarded-For entry (Vercel:
+# 1). The caller's IP is the entry that many places from the right; entries
+# further left were sent by the client and can be anything. 0 ignores the
+# header (the API is reached directly), so nobody can pick their own IP to
+# get round the per-IP limits.
+TRUSTED_PROXY_COUNT = max(0, int(os.getenv("TRUSTED_PROXY_COUNT", "1")))

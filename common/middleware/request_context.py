@@ -8,13 +8,12 @@ HEADER = "x-request-id"
 
 
 def _ip(scope: Scope, headers: dict[bytes, bytes]) -> str | None:
-    # same rule as common.rate_limit.client_ip: behind one proxy (the
-    # deployment's), the right-most X-Forwarded-For entry is the one it added
+    # the same rule as common.rate_limit.client_ip
     forwarded = headers.get(b"x-forwarded-for")
-    if forwarded:
-        return forwarded.decode("latin-1").split(",")[-1].strip() or None
     client = scope.get("client")
-    return client[0] if client else None
+    return request_context.client_ip_from(
+        forwarded.decode("latin-1") if forwarded else None, client[0] if client else None
+    )
 
 
 class RequestContextMiddleware:

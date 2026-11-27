@@ -52,6 +52,12 @@ class FakeSession:
     def rollback(self):
         self.rollbacks += 1
 
+    def begin_nested(self):
+        # a savepoint: nothing to undo in memory, so just run the block
+        from contextlib import nullcontext
+
+        return nullcontext()
+
     def refresh(self, obj):
         self._assign_id(obj)
         # rows added to a relationship get their ids at flush, like children

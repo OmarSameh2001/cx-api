@@ -6,5 +6,6 @@
   "system_not_deletable": "لا يمكن حذف أدوار النظام",
   "in_use": "الدور مسند إلى موظفين؛ أعد إسنادهم قبل الحذف",
   "permission_exists": "الصلاحية موجودة بالفعل",
-  "system_not_renamable": "لا يمكن إعادة تسمية أدوار النظام"
+  "system_not_renamable": "لا يمكن إعادة تسمية أدوار النظام",
+  "system_permissions_locked": "لا يمكن تغيير صلاحيات دور المسؤول"
 }

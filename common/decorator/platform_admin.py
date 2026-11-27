@@ -1,5 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 
+from common.errors import AppError
 from modules.auth.dto import EmployeePrincipal
 from modules.auth.route import current_employee
 
@@ -16,5 +17,5 @@ def platform_admin(
         def create_organisation(..., employee=Depends(platform_admin)): ...
     """
     if not employee.is_platform_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Platform admin access required")
+        raise AppError(403, "auth.platform_admin_required")
     return employee

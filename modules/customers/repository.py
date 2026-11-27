@@ -30,8 +30,11 @@ def create(
         last_name=last_name.strip(),
         phone=phone.strip() if phone else None,
     )
-    db.add(customer)
-    db.flush()  # assigns the id
+    # in a savepoint: if the same email was just added by another request,
+    # only this insert is undone, not the caller's transaction
+    with db.begin_nested():
+        db.add(customer)
+        db.flush()  # assigns the id
     return customer
 
 

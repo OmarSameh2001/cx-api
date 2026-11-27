@@ -2,9 +2,9 @@ from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from common.services.text_scoring.scorer import score_text
 from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal, Principal
@@ -224,10 +224,7 @@ def _validate_required(
         if str(field.id) in skipped:
             continue
         if _required_missing(field, answers):
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                f"Field {field.id} ({field.question}) is required",
-            )
+            raise AppError(422, "submissions.field_required", id=field.id, question=field.question)
 
 
 @dataclass
@@ -371,16 +368,11 @@ def rebuild_results(
 
 def _ensure_submitter_allowed(form: Form, principal_type: str) -> None:
     if not form.is_active:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Form is not accepting submissions"
-        )
+        raise AppError(409, "public_forms.closed")
     if form.is_archived:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Form is archived")
+        raise AppError(409, "submissions.form_archived")
     if principal_type not in (form.submitter_type or []):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            f"{principal_type}s are not allowed to submit this form",
-        )
+        raise AppError(403, "submissions.submitter_not_allowed", principal_type=principal_type)
 
 
 def _ensure_user_can_access_form(form: Form, principal: Principal) -> None:
@@ -388,7 +380,7 @@ def _ensure_user_can_access_form(form: Form, principal: Principal) -> None:
     customers see only forms with empty/null assigned_to_units."""
     if isinstance(principal, EmployeePrincipal):
         if form.organisation_id != principal.organisation_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+            raise AppError(404, "forms.not_found")
         assigned = form.assigned_to_units or []
         if not assigned:
             return
@@ -396,15 +388,11 @@ def _ensure_user_can_access_form(form: Form, principal: Principal) -> None:
         if principal.unit_id is not None:
             unit_ids.add(principal.unit_id)
         if not (unit_ids & set(assigned)):
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "Form is not assigned to your unit"
-            )
+            raise AppError(403, "submissions.not_your_unit")
     else:
         # customer: no unit gating, only submitter_type gates them
         if form.assigned_to_units:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "Form is not assigned to you"
-            )
+            raise AppError(403, "submissions.not_assigned")
 
 
 def _principal_ids(principal: Principal) -> tuple[Optional[int], Optional[int]]:
@@ -414,15 +402,27 @@ def _principal_ids(principal: Principal) -> tuple[Optional[int], Optional[int]]:
     return None, principal.id
 
 
+def _load(db: Session, submission_id: int, principal: Principal) -> Submission:
+    """The submission, or 404 when it doesn't exist or belongs to another
+    organisation's form, checked before anything else so the answer never
+    shows whether it exists there."""
+    submission = repository.get_submission(db, submission_id)
+    if submission is None:
+        raise AppError(404, "submissions.not_found")
+    if isinstance(principal, EmployeePrincipal):
+        form = submission.form
+        if form is None or form.organisation_id != principal.organisation_id:
+            raise AppError(404, "submissions.not_found")
+    return submission
+
+
 def _ensure_owner(submission: Submission, principal: Principal) -> None:
     user_id, customer_id = _principal_ids(principal)
     if user_id is not None and submission.user_id == user_id:
         return
     if customer_id is not None and submission.customer_id == customer_id:
         return
-    raise HTTPException(
-        status.HTTP_403_FORBIDDEN, "You can only access your own submissions"
-    )
+    raise AppError(403, "submissions.own_only")
 
 
 def _ensure_can_view(submission: Submission, principal: Principal) -> None:
@@ -434,18 +434,13 @@ def _ensure_can_view(submission: Submission, principal: Principal) -> None:
         if submission.form is not None and submission.form.organisation_id == principal.organisation_id:
             if form_access.can_review(principal, submission.form):
                 return
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Not allowed to view this submission"
-        )
+        raise AppError(403, "submissions.view_denied")
     _ensure_owner(submission, principal)
 
 
 def _ensure_in_progress(submission: Submission) -> None:
     if submission.status != "in_progress":
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Submission is {submission.status}; cannot be modified",
-        )
+        raise AppError(409, "submissions.locked", status=submission.status)
 
 
 def _check_and_apply_expiry(
@@ -480,12 +475,10 @@ def get_respondent_form(
     """The form behind the caller's own in-progress submission. Tying the
     questions to a started attempt means they can't be read before the timer
     runs, and the respondent view never carries the correct answers."""
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+    submission = _load(db, submission_id, principal)
     _ensure_owner(submission, principal)
     if _check_and_apply_expiry(db, submission):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Submission has expired")
+        raise AppError(409, "submissions.expired")
     _ensure_in_progress(submission)
     return as_answered(submission)
 
@@ -499,10 +492,7 @@ def _ensure_attempt_quota(
         db, form_id=form.id, user_id=user_id, customer_id=customer_id
     )
     if form.max_attempts is not None and used >= form.max_attempts:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"You have used all {form.max_attempts} attempt(s) for this form",
-        )
+        raise AppError(409, "submissions.attempts_used", max_attempts=form.max_attempts)
     return used + 1
 
 
@@ -511,12 +501,15 @@ def start_submission(
 ) -> Submission:
     form = forms_repository.get_form(db, form_id)
     if form is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+        raise AppError(404, "forms.not_found")
 
+    # another organisation's form is missing, whatever state it is in
+    if isinstance(principal, EmployeePrincipal) and form.organisation_id != principal.organisation_id:
+        raise AppError(404, "forms.not_found")
     _ensure_submitter_allowed(form, principal.principal)
     _ensure_user_can_access_form(form, principal)
     if published(form) is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Form has not been published yet")
+        raise AppError(409, "submissions.form_unpublished")
 
     user_id, customer_id = _principal_ids(principal)
 
@@ -555,14 +548,10 @@ def save_draft(
     answers: dict[str, Any],
     principal: Principal,
 ) -> Submission:
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+    submission = _load(db, submission_id, principal)
     _ensure_owner(submission, principal)
     if _check_and_apply_expiry(db, submission):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Submission has expired; draft cannot be saved"
-        )
+        raise AppError(409, "submissions.draft_expired")
     _ensure_in_progress(submission)
     # merge answers (partial allowed); only the version's own questions are
     # kept, with values bounded by type and size
@@ -585,14 +574,10 @@ def submit_submission(
     answers: Optional[dict[str, Any]],
     principal: Principal,
 ) -> Submission:
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+    submission = _load(db, submission_id, principal)
     _ensure_owner(submission, principal)
     if _check_and_apply_expiry(db, submission):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Submission has expired"
-        )
+        raise AppError(409, "submissions.expired")
     _ensure_in_progress(submission)
 
     if answers:
@@ -625,11 +610,10 @@ def submit_submission(
 def get_submission(
     db: Session, *, submission_id: int, principal: Principal
 ) -> Submission:
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
-    _check_and_apply_expiry(db, submission)
+    submission = _load(db, submission_id, principal)
+    # allowed first: someone who can't see it mustn't change it either
     _ensure_can_view(submission, principal)
+    _check_and_apply_expiry(db, submission)
     return submission
 
 
@@ -733,15 +717,11 @@ def reveal_submission(
     db: Session, *, submission_id: int, principal: Principal
 ) -> Submission:
     if not isinstance(principal, EmployeePrincipal):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only reviewers can reveal results")
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+        raise AppError(403, "submissions.reviewers_only")
+    submission = _load(db, submission_id, principal)
     form = submission.form
-    if form is None or form.organisation_id != principal.organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
     if not form_access.can_review(principal, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to reveal this submission")
+        raise AppError(403, "submissions.reveal_denied")
     submission.results_revealed = True
     return repository.save(db, submission)
 
@@ -814,14 +794,10 @@ def serialize_detail(
 def delete_submission(
     db: Session, *, submission_id: int, principal: Principal
 ) -> None:
-    submission = repository.get_submission(db, submission_id)
-    if submission is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
+    submission = _load(db, submission_id, principal)
     _ensure_owner(submission, principal)
     if submission.status != "in_progress":
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Finalized submissions cannot be deleted"
-        )
+        raise AppError(409, "submissions.finalized_not_deletable")
     from modules.files import service as files
 
     files.delete_attached(db, attached_type="submission", attached_ids=[submission.id])

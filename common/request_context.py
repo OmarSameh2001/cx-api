@@ -26,6 +26,20 @@ _EMPTY = RequestContext()
 _current: ContextVar[Optional[RequestContext]] = ContextVar("request_context", default=None)
 
 
+def client_ip_from(forwarded: Optional[str], peer: Optional[str]) -> Optional[str]:
+    """The caller's IP from X-Forwarded-For and the connection's peer, trusting
+    only the entries added by our own TRUSTED_PROXY_COUNT proxies."""
+    from config import AuthEnv
+
+    trusted = AuthEnv.TRUSTED_PROXY_COUNT
+    if trusted and forwarded:
+        entries = [e.strip() for e in forwarded.split(",") if e.strip()]
+        if entries:
+            # fewer entries than proxies: the left-most is the closest we have
+            return entries[max(len(entries) - trusted, 0)]
+    return peer
+
+
 def current() -> RequestContext:
     return _current.get() or _EMPTY
 

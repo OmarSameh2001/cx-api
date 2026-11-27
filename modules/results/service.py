@@ -16,9 +16,9 @@ Who sees what (I10):
 from datetime import date, datetime
 from typing import Any, Optional
 
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.auth.dto import EmployeePrincipal
 from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
@@ -134,11 +134,11 @@ def query(db: Session, *, employee: EmployeePrincipal, payload: ResultsQuery) ->
     if payload.form_id is not None:
         form = forms_repository.get_form(db, payload.form_id)
         if form is None or form.organisation_id != employee.organisation_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+            raise AppError(404, "forms.not_found")
 
     whole_organisation = employee.is_admin or (form is not None and form.created_by == employee.id)
     if not whole_organisation and not form_access.can_review_all(employee):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to view results")
+        raise AppError(403, "results.view_denied")
 
     filters = payload.filters
     units: Optional[set[int]] = set(filters.unit_ids) if filters.unit_ids is not None else None

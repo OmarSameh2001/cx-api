@@ -1,8 +1,9 @@
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 from modules.roles import service as roles_service
@@ -18,14 +19,14 @@ PLATFORM_ONLY_FIELDS = ("subscription_end", "subscription_plan_id", "external_id
 def _ensure_organisation(db: Session, org_id: int) -> Organisation:
     org = repository.get_organisation(db, org_id)
     if org is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organisation not found")
+        raise AppError(404, "organisations.not_found")
     return org
 
 
 def _ensure_visible(db: Session, org_id: int, viewer: EmployeePrincipal) -> Organisation:
     # Another organisation is reported as missing, so its existence does not leak.
     if not viewer.is_platform_admin and org_id != viewer.organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organisation not found")
+        raise AppError(404, "organisations.not_found")
     return _ensure_organisation(db, org_id)
 
 
@@ -49,7 +50,7 @@ def create_organisation(db: Session, *, payload: OrganisationCreate) -> Organisa
     if payload.external_id:
         existing = repository.get_organisation_by_external_id(db, payload.external_id)
         if existing:
-            raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
+            raise AppError(409, "employees.external_id_in_use")
     org = repository.create_organisation(
         db,
         name=payload.name,
@@ -72,9 +73,7 @@ def update_organisation(
 ) -> Organisation:
     org = _ensure_visible(db, org_id, viewer)
     if not viewer.is_platform_admin and not viewer.is_admin:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only the organisation admin can edit the organisation"
-        )
+        raise AppError(403, "organisations.admin_only")
     data = payload.model_dump(exclude_unset=True)
     if not data:
         return org
@@ -82,10 +81,7 @@ def update_organisation(
         # Compare to the stored value so a form that echoes it back still saves.
         changed = [f for f in PLATFORM_ONLY_FIELDS if f in data and data[f] != getattr(org, f)]
         if changed:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                f"Only a platform admin can change: {', '.join(changed)}",
-            )
+            raise AppError(403, "organisations.platform_fields", changed=', '.join(changed))
         for f in PLATFORM_ONLY_FIELDS:
             data.pop(f, None)
     before = audit.snapshot(org)
@@ -94,7 +90,7 @@ def update_organisation(
     if "external_id" in data and data["external_id"]:
         existing = repository.get_organisation_by_external_id(db, data["external_id"])
         if existing and existing.id != org_id:
-            raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
+            raise AppError(409, "employees.external_id_in_use")
     repository.update_organisation(db, org, data=data)
     audit.record_changes(db, org, before)
     db.commit()
@@ -111,7 +107,7 @@ def _set_logo_file(db: Session, org: Organisation, file_id: Optional[int], viewe
     if file_id is not None:
         new = files.get(db, file_id=file_id, actor=viewer)
         if new.purpose != "org_logo" or new.organisation_id != org.id:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "logo_file_id must be an uploaded logo of this organisation")
+            raise AppError(422, "organisations.bad_logo")
         files.attach(db, new, attached_type="organisation", attached_id=org.id)
     if org.logo_file_id is not None:
         old = files.repository.get_file(db, org.logo_file_id)

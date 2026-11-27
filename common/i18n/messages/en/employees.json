@@ -4,5 +4,8 @@
   "unit_not_assigned": "Unit not in your assigned units",
   "email_in_use": "Email already in use",
   "username_in_use": "Username already in use",
-  "external_id_in_use": "External ID already in use"
+  "external_id_in_use": "External ID already in use",
+  "admin_role_admin_only": "Only the organisation admin can give someone the admin role",
+  "admin_admin_only": "Only the organisation admin can change an admin's account",
+  "own_role": "You can't change your own role"
 }

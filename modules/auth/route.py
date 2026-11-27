@@ -1,9 +1,10 @@
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, Request, Response
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from common.rate_limit import client_ip, count_failure, enforce, refuse_if_full
 from config import AuthEnv, SSOEnv
 from db import get_db
@@ -25,9 +26,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _client_ip(request: Request) -> Optional[str]:
-    if request.client:
-        return request.client.host
-    return None
+    # the caller's IP, not the proxy's, as every other sign-in record has it
+    return client_ip(request)
 
 
 def _access_token(
@@ -38,33 +38,25 @@ def _access_token(
         return authorization.split(" ", 1)[1].strip()
     if access_cookie:
         return access_cookie
-    raise HTTPException(
-        status.HTTP_401_UNAUTHORIZED,
-        "Missing access token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    raise AppError(401, "auth.missing_access_token", headers={"WWW-Authenticate": "Bearer"})
 
 
 def current_principal(token: str = Depends(_access_token)) -> Principal:
     try:
         payload = service.decode_access_token(token)
     except jwt.PyJWTError as e:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            f"Invalid access token: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AppError(401, "auth.invalid_access_token", headers={"WWW-Authenticate": "Bearer"}, error=e)
     principal_type = payload.get("principal")
     if principal_type == "employee":
         return EmployeePrincipal(**payload)
     # Customers no longer log in (they answer by public link); any customer
     # token still in circulation is refused like an unknown one.
-    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown principal type")
+    raise AppError(401, "auth.unknown_principal")
 
 
 def current_employee(p: Principal = Depends(current_principal)) -> EmployeePrincipal:
     if not isinstance(p, EmployeePrincipal):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Employee access required")
+        raise AppError(403, "auth.employee_required")
     return p
 
 

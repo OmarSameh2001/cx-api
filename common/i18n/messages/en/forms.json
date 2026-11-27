@@ -30,5 +30,12 @@
   "reveal_denied": "Not allowed to reveal results",
   "bad_compare_target": "against must be a version number or \"draft\"",
   "invalid_settings": "Invalid settings: {error}",
-  "settings_null": "settings can't be null"
+  "settings_null": "settings can't be null",
+  "branching_questionnaires_only": "Branching is only supported on questionnaires",
+  "branching_needs_sections": "Branching requires the form to have sections",
+  "duplicate_section_ids": "Duplicate section ids",
+  "branching_unknown_target": "Branching targets unknown section {target}",
+  "branching_backwards": "Section {source} can only jump forward, not to section {target}",
+  "branching_outside_section": "Branching questions must belong to a section",
+  "branching_one_per_section": "Section {section} can only have one branching question"
 }

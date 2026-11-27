@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from common.dto import Page
+from modules.auth.dto import EmployeePrincipal
 
 from . import service
 from .dto import EmployeeCreate, EmployeeRead, EmployeeSummary, EmployeeUpdate
@@ -38,37 +39,17 @@ def get_employee(
     )
 
 
-def create_employee(
-    db: Session, payload: EmployeeCreate, organisation_id: int, assigned_unit_ids: list[int]
-) -> EmployeeRead:
-    return EmployeeRead.model_validate(
-        service.create_employee(
-            db, payload=payload, organisation_id=organisation_id, assigned_unit_ids=assigned_unit_ids
-        )
-    )
+def create_employee(db: Session, payload: EmployeeCreate, actor: EmployeePrincipal) -> EmployeeRead:
+    return EmployeeRead.model_validate(service.create_employee(db, payload=payload, actor=actor))
 
 
 def update_employee(
-    db: Session,
-    employee_id: int,
-    payload: EmployeeUpdate,
-    organisation_id: int,
-    assigned_unit_ids: list[int],
+    db: Session, employee_id: int, payload: EmployeeUpdate, actor: EmployeePrincipal
 ) -> EmployeeRead:
     return EmployeeRead.model_validate(
-        service.update_employee(
-            db,
-            employee_id=employee_id,
-            payload=payload,
-            organisation_id=organisation_id,
-            assigned_unit_ids=assigned_unit_ids,
-        )
+        service.update_employee(db, employee_id=employee_id, payload=payload, actor=actor)
     )
 
 
-def delete_employee(
-    db: Session, employee_id: int, organisation_id: int, assigned_unit_ids: list[int]
-) -> None:
-    service.delete_employee(
-        db, employee_id=employee_id, organisation_id=organisation_id, assigned_unit_ids=assigned_unit_ids
-    )
+def delete_employee(db: Session, employee_id: int, actor: EmployeePrincipal) -> None:
+    service.delete_employee(db, employee_id=employee_id, actor=actor)

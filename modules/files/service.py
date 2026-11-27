@@ -31,7 +31,7 @@ from fastapi import HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from common.errors import CodedHTTPException
+from common.errors import AppError, CodedHTTPException
 from common.services import images
 from common.services.images import ImagePolicy
 from common.services.storage import StorageError, UploadTarget, default_provider_name, get_storage
@@ -66,7 +66,7 @@ def _now() -> datetime:
 
 
 def _not_found() -> HTTPException:
-    return HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
+    return AppError(404, "files.not_found")
 
 
 def _can_manage_org(actor: Actor, organisation_id: int) -> bool:
@@ -121,7 +121,7 @@ def _ensure_can_modify(db: Session, file: StoredFile, actor: Actor) -> None:
     if file.purpose == "org_logo":
         if _can_manage_org(actor, file.organisation_id):
             return
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can change the logo")
+        raise AppError(403, "files.logo_admin_only")
     if not _is_owner(file, actor):
         raise _not_found()
     if file.attached_type == "submission" and file.attached_id is not None:
@@ -129,7 +129,7 @@ def _ensure_can_modify(db: Session, file: StoredFile, actor: Actor) -> None:
 
         submission = submissions_repository.get_submission(db, file.attached_id)
         if submission is not None and submission.status != "in_progress":
-            raise HTTPException(status.HTTP_409_CONFLICT, "Files of a finished submission can't be changed")
+            raise AppError(409, "files.submission_finished")
 
 
 # --- limits ----------------------------------------------------------------------
@@ -208,7 +208,7 @@ def question_limits(options: Optional[list[str]], config: Optional[dict]) -> dic
 def _purpose(name: str) -> Purpose:
     purpose = PURPOSES.get(name)
     if purpose is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown file purpose {name!r}")
+        raise AppError(422, "files.unknown_purpose", name=name)
     return purpose
 
 
@@ -294,18 +294,18 @@ def set_limit(
     _purpose(purpose)
     if organisation_id is None:
         if not actor.is_platform_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Platform admin access required")
+            raise AppError(403, "auth.platform_admin_required")
     elif not _can_manage_org(actor, organisation_id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can change file limits")
+        raise AppError(403, "files.limits_admin_only")
 
     hard = FilesEnv.FILES_HARD_MAX_MB
     if payload.get("max_mb") is not None and payload["max_mb"] > hard:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"max_mb can't exceed the hard cap of {hard} MB")
+        raise AppError(422, "files.max_over_hard_cap", hard=hard)
     types = payload.get("allowed_types")
     if types is not None:
         types = [t.strip().lower() for t in types if t.strip()]
         if not all(re.fullmatch(r"[a-z0-9.+-]+/([a-z0-9.+-]+|\*)|\*/\*", t) for t in types):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "allowed_types must be MIME types like image/png or image/*")
+            raise AppError(422, "files.bad_mime_types")
 
     row = repository.get_limit(db, organisation_id=organisation_id, purpose=purpose)
     if row is None:
@@ -322,9 +322,9 @@ def delete_limit(db: Session, *, actor: EmployeePrincipal, purpose: str, organis
     _purpose(purpose)
     if organisation_id is None:
         if not actor.is_platform_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Platform admin access required")
+            raise AppError(403, "auth.platform_admin_required")
     elif not _can_manage_org(actor, organisation_id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can change file limits")
+        raise AppError(403, "files.limits_admin_only")
     repository.delete_limits(db, organisation_id=organisation_id, purpose=purpose)
 
 
@@ -378,13 +378,13 @@ def _file_question(db: Session, form_id: Optional[int], field_id: Optional[int],
     from modules.forms import service as forms_service
 
     if form_id is None or field_id is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "form_id and field_id are required for form answers")
+        raise AppError(422, "files.answer_needs_form_and_field")
     form = forms_repository.get_form(db, form_id)
     if form is None or (organisation_id is not None and form.organisation_id != organisation_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+        raise AppError(404, "forms.not_found")
     field = forms_service.find_published_field(db, form, field_id)
     if field is None or field.type != "file":
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "field_id must be a file question of this form")
+        raise AppError(422, "files.not_a_file_question")
     return form, field
 
 
@@ -430,7 +430,7 @@ def _signed_upload(file_provider: str, key: str, content_type: str, size: int) -
         )
     except StorageError as exc:
         logger.error("storage: signed upload failed: {}", exc)
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File storage is unavailable") from exc
+        raise AppError(503, "files.storage_unavailable") from exc
 
 
 # --- the service -----------------------------------------------------------------
@@ -467,7 +467,7 @@ def add(
 
     if isinstance(actor, PublicActor):
         if not p.public:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "This kind of file can't be uploaded here")
+            raise AppError(403, "files.kind_not_allowed")
         form, field = _file_question(db, actor.form_id, field_id, None)
         organisation_id, form_id = form.organisation_id, form.id
         question_field = field
@@ -482,7 +482,7 @@ def add(
             question_field = field
         elif purpose == "org_logo":
             if not _can_manage_org(actor, organisation_id):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can change the logo")
+                raise AppError(403, "files.logo_admin_only")
             form_id = field_id = None
 
     limits = _limits(db, organisation_id=organisation_id, purpose=purpose, field=question_field)
@@ -529,7 +529,7 @@ def complete(db: Session, *, file_id: int, actor: Actor) -> StoredFile:
         info = get_storage(provider).head(key, content_type=content_type)
     except StorageError as exc:
         logger.error("storage: head failed for file {}: {}", file.id, exc)
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File storage is unavailable") from exc
+        raise AppError(503, "files.storage_unavailable") from exc
     if info is None:
         raise CodedHTTPException(status.HTTP_409_CONFLICT, "The file hasn't been uploaded yet", code="file_not_uploaded")
 
@@ -594,7 +594,7 @@ def update(
         raise _not_found()
     _ensure_can_modify(db, file, actor)
     if file.status != "ready":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Only a finished upload can be replaced")
+        raise AppError(409, "files.only_finished_replaced")
     content_type = content_type.split(";")[0].strip().lower()
     name = clean_name(name)
     limits = limits_for_file(db, file)
@@ -692,7 +692,7 @@ def signed_link_for(file: StoredFile, *, variant: Optional[str] = None, inline: 
     if variant:
         found = (file.variants or {}).get(variant)
         if not found:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"File has no {variant!r} version")
+            raise AppError(404, "files.no_variant", variant=variant)
         key, content_type = found["key"], found["content_type"]
     ttl = PURPOSES[file.purpose].link_ttl_seconds or FilesEnv.FILES_LINK_TTL_SECONDS
     # images may show inline; anything else always downloads, so a file can
@@ -703,18 +703,18 @@ def signed_link_for(file: StoredFile, *, variant: Optional[str] = None, inline: 
             key, download_name=file.name, content_type=content_type, expires_in=ttl, inline=inline
         )
     except StorageError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File storage is unavailable") from exc
+        raise AppError(503, "files.storage_unavailable") from exc
     return url, _now() + timedelta(seconds=ttl)
 
 
 def attach(db: Session, file: StoredFile, *, attached_type: str, attached_id: int) -> None:
     """Ties a ready file to a record. No commit: part of the caller's change."""
     if attached_type not in PURPOSES[file.purpose].attach_types:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"A {file.purpose} file can't be attached to {attached_type}")
+        raise AppError(422, "files.wrong_attachment", purpose=file.purpose, attached_type=attached_type)
     if file.status != "ready":
-        raise HTTPException(status.HTTP_409_CONFLICT, "The file isn't uploaded yet")
+        raise AppError(409, "files.not_uploaded_yet")
     if file.attached_type is not None and (file.attached_type, file.attached_id) != (attached_type, attached_id):
-        raise HTTPException(status.HTTP_409_CONFLICT, "The file is already used elsewhere")
+        raise AppError(409, "files.used_elsewhere")
     file.attached_type, file.attached_id = attached_type, attached_id
 
 
@@ -758,7 +758,7 @@ def put_bytes(
     try:
         info = get_storage(provider).put_bytes(key, data, content_type=content_type)
     except StorageError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File storage is unavailable") from exc
+        raise AppError(503, "files.storage_unavailable") from exc
     file = repository.add_file(
         db,
         StoredFile(

@@ -23,7 +23,7 @@ def test_reviewer_cannot_open_a_submission_on_another_organisations_form(client,
     monkeypatch.setattr(subs_repo, "get_submission", lambda db, sid: sub)
     for path in (f"/submissions/{sub.id}", f"/submissions/{sub.id}/detail", f"/submissions/{sub.id}/form"):
         res = client.get(path, headers=employee_token(organisation_id=10, is_admin=True))
-        assert res.status_code in (403, 404), f"{path} → {res.status_code}"
+        assert res.status_code == 404, f"{path} → {res.status_code}"
 
 
 def test_employee_lookup_is_limited_to_the_callers_units(client, monkeypatch):

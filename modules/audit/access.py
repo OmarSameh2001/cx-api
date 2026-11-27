@@ -12,9 +12,9 @@ service themselves, to record their changes.
 from dataclasses import dataclass
 from typing import Callable
 
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.auth.dto import EmployeePrincipal
 
 
@@ -27,7 +27,7 @@ class RecordAccess:
 
 def _require(employee: EmployeePrincipal, permission: str) -> None:
     if not employee.is_admin and permission not in (employee.permissions or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, f"You dont have the required permissions: {permission}")
+        raise AppError(403, "auth.permissions_missing", missing=permission)
 
 
 def _role(db: Session, employee: EmployeePrincipal, record_id: int) -> RecordAccess:
@@ -80,5 +80,5 @@ CHECKS: dict[str, Callable[[Session, EmployeePrincipal, int], RecordAccess]] = {
 def check(db: Session, employee: EmployeePrincipal, entity_type: str, record_id: int) -> RecordAccess:
     rule = CHECKS.get(entity_type)
     if rule is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{entity_type} records have no history")
+        raise AppError(404, "audit.no_history", entity_type=entity_type)
     return rule(db, employee, record_id)

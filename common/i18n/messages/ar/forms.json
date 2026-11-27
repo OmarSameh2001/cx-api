@@ -30,5 +30,12 @@
   "reveal_denied": "غير مسموح لك بإظهار النتائج",
   "bad_compare_target": "يجب أن تكون المقارنة برقم إصدار أو \"draft\"",
   "invalid_settings": "إعدادات غير صالحة: {error}",
-  "settings_null": "لا يمكن أن تكون الإعدادات فارغة"
+  "settings_null": "لا يمكن أن تكون الإعدادات فارغة",
+  "branching_questionnaires_only": "التفرّع متاح في الاستبيانات فقط",
+  "branching_needs_sections": "يتطلب التفرّع أن يحتوي النموذج على أقسام",
+  "duplicate_section_ids": "معرّفات الأقسام مكررة",
+  "branching_unknown_target": "يشير التفرّع إلى قسم غير معروف {target}",
+  "branching_backwards": "يمكن للقسم {source} الانتقال إلى الأمام فقط، وليس إلى القسم {target}",
+  "branching_outside_section": "يجب أن تنتمي أسئلة التفرّع إلى قسم",
+  "branching_one_per_section": "لا يمكن أن يحتوي القسم {section} إلا على سؤال تفرّع واحد"
 }

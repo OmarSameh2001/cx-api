@@ -6,5 +6,6 @@
   "system_not_deletable": "System roles cannot be deleted",
   "in_use": "Role is assigned to employees; reassign before deletion",
   "permission_exists": "Permission already exists",
-  "system_not_renamable": "System roles cannot be renamed"
+  "system_not_renamable": "System roles cannot be renamed",
+  "system_permissions_locked": "The admin role's permissions can't be changed"
 }

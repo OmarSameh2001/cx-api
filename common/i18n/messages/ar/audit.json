@@ -2,5 +2,6 @@
   "no_history": "سجلات {entity_type} ليس لها سجل تغييرات",
   "action_too_long": "يجب ألا يزيد اسم الإجراء عن 48 حرفًا",
   "entity_id_needs_type": "يتطلب entity_id تحديد entity_type",
-  "bad_date_range": "يجب أن يكون تاريخ البداية قبل تاريخ النهاية"
+  "bad_date_range": "يجب أن يكون تاريخ البداية قبل تاريخ النهاية",
+  "invalid_cursor": "مؤشر الصفحة غير صالح"
 }

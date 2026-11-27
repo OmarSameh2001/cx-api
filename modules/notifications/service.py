@@ -21,10 +21,10 @@ can never be sent.
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Sequence
 
-from fastapi import HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from common.services import messaging
 from config import NotificationsEnv as Env
 from modules.auth.dto import EmployeePrincipal
@@ -227,7 +227,7 @@ def mark_read(db: Session, *, employee: EmployeePrincipal, ids: Optional[Sequenc
 
 def mark_unread(db: Session, *, employee: EmployeePrincipal, notification_id: int) -> MarkedRead:
     if not repository.mark_unread(db, recipient_id=employee.id, notification_id=notification_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notification not found")
+        raise AppError(404, "notifications.not_found")
     db.commit()
     return MarkedRead(marked=1, unread=repository.unread_count(db, recipient_id=employee.id))
 
@@ -237,7 +237,7 @@ def mark_unread(db: Session, *, employee: EmployeePrincipal, notification_id: in
 
 def _ensure_admin(employee: EmployeePrincipal) -> None:
     if not (employee.is_admin or employee.is_platform_admin):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the organisation admin can do this")
+        raise AppError(403, "auth.org_admin_only")
 
 
 def channels(employee: EmployeePrincipal) -> ChannelsInfo:

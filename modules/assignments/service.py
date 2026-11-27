@@ -1,8 +1,8 @@
 from typing import Optional
 
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.employees.model import Employee
 from modules.units.model import Unit
 
@@ -18,19 +18,19 @@ from .model import Assignment
 def _ensure_employee_in_organisation(db: Session, employee_id: int, organisation_id: int) -> None:
     employee = db.get(Employee, employee_id)
     if employee is None or employee.organisation_id != organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+        raise AppError(404, "employees.not_found")
 
 
 def _ensure_unit_in_organisation(db: Session, unit_id: int, organisation_id: int) -> None:
     unit = db.get(Unit, unit_id)
     if unit is None or unit.organisation_id != organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unit not found")
+        raise AppError(404, "units.not_found")
 
 
 def get_assignment(db: Session, assignment_id: int, organisation_id: int) -> Assignment:
     assignment = repository.get_assignment(db, assignment_id)
     if assignment is None or assignment.unit.organisation_id != organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignment not found")
+        raise AppError(404, "assignments.not_found")
     return assignment
 
 

@@ -24,9 +24,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
 
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from common import request_context
 from config import AuditEnv
 from modules.auth.dto import EmployeePrincipal
@@ -330,7 +330,7 @@ def query(db: Session, *, organisation_id: Optional[int], payload: AuditQuery) -
     try:
         rows, next_cursor = _list(db, organisation_id, payload)
     except ValueError as exc:  # a cursor that isn't one of ours
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        raise AppError(422, "audit.invalid_cursor") from exc
     return _page(db, organisation_id, rows, next_cursor)
 
 
@@ -365,7 +365,7 @@ def record_history(
             exclude_action_prefixes=_HISTORY_EXCLUDES, cursor=cursor, limit=limit,
         )
     except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        raise AppError(422, "audit.invalid_cursor") from exc
     page = _page(db, organisation_id, rows, next_cursor)
     for item in page.items:
         if item.action in allowed.masked_actions:

@@ -37,9 +37,7 @@ def create_employee(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.create_employee(
-        db, payload, employee.organisation_id, employee.assigned_unit_ids
-    )
+    return controller.create_employee(db, payload, employee)
 
 
 @router.get("/{employee_id}", response_model=EmployeeRead)
@@ -62,9 +60,7 @@ def update_employee(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    return controller.update_employee(
-        db, employee_id, payload, employee.organisation_id, employee.assigned_unit_ids
-    )
+    return controller.update_employee(db, employee_id, payload, employee)
 
 
 @router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -74,7 +70,5 @@ def delete_employee(
     db: Session = Depends(get_db),
     employee: EmployeePrincipal = Depends(current_employee),
 ):
-    controller.delete_employee(
-        db, employee_id, employee.organisation_id, employee.assigned_unit_ids
-    )
+    controller.delete_employee(db, employee_id, employee)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

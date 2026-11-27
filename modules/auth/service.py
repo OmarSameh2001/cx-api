@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import bcrypt
 import jwt
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from config import AuthEnv
 from modules.audit import service as audit
 from modules.units.repository import get_descendant_unit_ids
@@ -14,9 +14,11 @@ from modules.units.repository import get_descendant_unit_ids
 from . import repository
 
 
-class AuthError(HTTPException):
-    def __init__(self, detail: str, code: int = status.HTTP_401_UNAUTHORIZED):
-        super().__init__(status_code=code, detail=detail)
+class AuthError(AppError):
+    """A refused sign-in or session, by catalogue code (401 unless given)."""
+
+    def __init__(self, code: str, status_code: int = 401, **params):
+        super().__init__(status_code, code, **params)
 
 
 def hash_password(password: str) -> str:
@@ -189,11 +191,11 @@ def login_employee(
         record_failed_login(
             db, ip, employee, reason="unknown_account" if employee is None else "wrong_password"
         )
-        raise AuthError("Invalid email or password")
+        raise AuthError("auth.invalid_credentials")
     if not employee.is_active:
         audit.record(db, "auth.login_blocked", entity=employee, actor_id=None, ip=ip)
         db.commit()
-        raise AuthError("Account is disabled", code=status.HTTP_403_FORBIDDEN)
+        raise AuthError("auth.account_disabled", status_code=403)
 
     return issue_session(db, employee, user_agent=user_agent, ip=ip)
 
@@ -217,14 +219,14 @@ def record_failed_login(
 def current_session(db: Session, *, employee_id: int):
     employee = repository.get_employee_by_id(db, employee_id)
     if employee is None or not employee.is_active:
-        raise AuthError("Account no longer available")
+        raise AuthError("auth.account_unavailable")
     return employee, _build_employee_claims(db, employee)
 
 
 def set_preferred_locale(db: Session, *, employee_id: int, locale: Optional[str]) -> Optional[str]:
     employee = repository.get_employee_by_id(db, employee_id)
     if employee is None or not employee.is_active:
-        raise AuthError("Account no longer available")
+        raise AuthError("auth.account_unavailable")
     employee.preferred_locale = locale
     db.commit()
     return locale
@@ -238,26 +240,26 @@ def refresh_session(
     ip: Optional[str],
 ) -> tuple[str, str, int]:
     if not refresh_token:
-        raise AuthError("Missing refresh token")
+        raise AuthError("auth.missing_refresh_token")
     try:
         payload = _decode_refresh_token(refresh_token)
     except jwt.PyJWTError as e:
-        raise AuthError(f"Invalid refresh token: {e}")
+        raise AuthError("auth.invalid_refresh_token", error=e)
 
     jti = payload["jti"]
     principal_type = payload["principal"]
     principal_id = int(payload["id"])
 
     if not repository.remove_refresh_jti(db, principal_type, principal_id, jti):
-        raise AuthError("Refresh token revoked")
+        raise AuthError("auth.refresh_revoked")
 
     if principal_type == "employee":
         employee = repository.get_employee_by_id(db, principal_id)
         if employee is None or not employee.is_active:
-            raise AuthError("Account no longer available")
+            raise AuthError("auth.account_unavailable")
         base_claims = _build_employee_claims(db, employee)
     else:
-        raise AuthError("Unknown principal type")
+        raise AuthError("auth.unknown_principal")
 
     return _issue_tokens(
         db,

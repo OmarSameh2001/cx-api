@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.customers import repository as customers_repository
 from modules.customers.model import Customer
 from modules.forms import repository as forms_repository
@@ -29,20 +30,16 @@ def _get_form_for_public(db: Session, token: str) -> PublishedForm:
     always answer what was last published, never the draft."""
     form = forms_repository.get_form_by_token(db, token)
     if form is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+        raise AppError(404, "forms.not_found")
     if form.is_archived or not form.is_active:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Form is not accepting submissions")
+        raise AppError(409, "public_forms.closed")
     if form.type != "questionnaire":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This form is not available via public link"
-        )
+        raise AppError(403, "public_forms.no_public_link")
     if "customer" not in (form.submitter_type or []):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This form does not accept customer submissions"
-        )
+        raise AppError(403, "public_forms.no_customers")
     view = published(form)
     if view is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Form is not accepting submissions")
+        raise AppError(409, "public_forms.closed")
     return view
 
 
@@ -59,14 +56,23 @@ def _resolve_customer(db: Session, form: Form, provided: PublicCustomer) -> Cust
     )
     if existing is not None:
         return existing
-    return customers_repository.create(
-        db,
-        organisation_id=form.organisation_id,
-        email=provided.email,
-        first_name=provided.first_name,
-        last_name=provided.last_name,
-        phone=provided.phone,
-    )
+    try:
+        return customers_repository.create(
+            db,
+            organisation_id=form.organisation_id,
+            email=provided.email,
+            first_name=provided.first_name,
+            last_name=provided.last_name,
+            phone=provided.phone,
+        )
+    except IntegrityError:
+        # a first submission with the same email committed just before ours
+        existing = customers_repository.get_by_email(
+            db, organisation_id=form.organisation_id, email=provided.email
+        )
+        if existing is None:
+            raise
+        return existing
 
 
 def _contact(provided: PublicCustomer) -> dict:
@@ -100,10 +106,7 @@ def submit_public(
     )
     if form.max_attempts is not None and used >= form.max_attempts:
         db.rollback()
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"You have already submitted this form the maximum allowed times ({form.max_attempts})",
-        )
+        raise AppError(409, "public_forms.max_attempts", max_attempts=form.max_attempts)
     result = grade(form, answers, visited)
 
     submission = Submission(

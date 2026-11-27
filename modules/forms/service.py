@@ -3,12 +3,12 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import HTTPException, status
+from fastapi import status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from common.errors import CodedHTTPException
+from common.errors import AppError, CodedHTTPException
 from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 from modules.events import service as events
@@ -47,17 +47,13 @@ def _should_have_public_token(form_or_data) -> bool:
 
 def _ensure_creator(form: Form, employee_id: int) -> None:
     if form.created_by != employee_id:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only the form creator can modify it"
-        )
+        raise AppError(403, "forms.creator_only")
 
 
 def _ensure_creator_can_delete(form: Form, employee_id: int) -> None:
     _ensure_creator(form, employee_id)
     if form.is_active:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Form must be inactive to be deleted"
-        )
+        raise AppError(409, "forms.must_be_inactive")
 
 
 def ordered_sections(sections: list[dict]) -> list[dict]:
@@ -78,14 +74,11 @@ def _ensure_known_field_ids(form: Form, payload: FormUpdate) -> None:
         return
     ids = [f.id for f in payload.fields if f.id is not None]
     if len(ids) != len(set(ids)):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Duplicate field ids")
+        raise AppError(422, "forms.duplicate_fields")
     own_ids = {f.id for f in form.fields}
     foreign = [i for i in ids if i not in own_ids]
     if foreign:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Field ids do not belong to this form: {foreign}",
-        )
+        raise AppError(422, "forms.foreign_fields", foreign=foreign)
 
 
 def validate_branching(
@@ -103,25 +96,25 @@ def validate_branching(
     if not has_rules:
         return
 
-    def fail(msg: str):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, msg)
+    def fail(code: str, **params):
+        raise AppError(422, code, **params)
 
     if form_type == "exam":
-        fail("Branching is only supported on questionnaires")
+        fail("forms.branching_questionnaires_only")
     if not sections:
-        fail("Branching requires the form to have sections")
+        fail("forms.branching_needs_sections")
 
     position = {s["id"]: i for i, s in enumerate(ordered_sections(sections))}
     if len(position) != len(sections):
-        fail("Duplicate section ids")
+        fail("forms.duplicate_section_ids")
 
     def check_target(source_id: int, target) -> None:
         if target == "end":
             return
         if target not in position:
-            fail(f"Branching targets unknown section {target}")
+            fail("forms.branching_unknown_target", target=target)
         if position[target] <= position[source_id]:
-            fail(f"Section {source_id} can only jump forward, not to section {target}")
+            fail("forms.branching_backwards", source=source_id, target=target)
 
     branching_sections: set[int] = set()
     for f in fields:
@@ -129,9 +122,9 @@ def validate_branching(
             continue
         sid = f.get("section_id")
         if sid not in position:
-            fail("Branching questions must belong to a section")
+            fail("forms.branching_outside_section")
         if sid in branching_sections:
-            fail(f"Section {sid} can only have one branching question")
+            fail("forms.branching_one_per_section", section=sid)
         branching_sections.add(sid)
         for target in f["branching"].values():
             check_target(sid, target)
@@ -147,7 +140,7 @@ def has_submissions(db: Session, form: Form) -> bool:
 
 def _ensure_same_org(form: Form, organisation_id: int) -> None:
     if form.organisation_id != organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+        raise AppError(404, "forms.not_found")
 
 
 def get_form_for_employee(db: Session, form_id: int, employee: EmployeePrincipal) -> Form:
@@ -155,14 +148,14 @@ def get_form_for_employee(db: Session, form_id: int, employee: EmployeePrincipal
     through their in-progress submission instead (without the answers)."""
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_read_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to view this form")
+        raise AppError(403, "forms.view_denied")
     return form
 
 
 def get_form(db: Session, form_id: int, *, organisation_id: Optional[int] = None) -> Form:
     form = repository.get_form(db, form_id)
     if form is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Form not found")
+        raise AppError(404, "forms.not_found")
     if organisation_id is not None:
         _ensure_same_org(form, organisation_id)
     return form
@@ -220,7 +213,7 @@ def _ensure_units_in_organisation(db: Session, unit_ids, organisation_id: int) -
     found = units_repository.unit_ids_in_organisation(db, wanted, organisation_id)
     for unit_id in wanted:  # the first missing one, in the order sent
         if unit_id not in found:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unit {unit_id} not found")
+            raise AppError(404, "units.id_not_found", unit_id=unit_id)
 
 
 # --- versions (E1.5) ----------------------------------------------------------
@@ -372,7 +365,7 @@ def _publish(db: Session, form: Form, employee_id: Optional[int]) -> FormVersion
 def publish_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to publish this form")
+        raise AppError(403, "forms.publish_denied")
     if not has_unpublished_changes(form):
         raise CodedHTTPException(
             status.HTTP_409_CONFLICT, "The draft has no changes to publish", code="nothing_to_publish"
@@ -403,7 +396,7 @@ def get_version(
     form = get_form_for_employee(db, form_id, employee)
     version = repository.get_version(db, form.id, number)
     if version is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
+        raise AppError(404, "forms.version_not_found")
     return form, version
 
 
@@ -457,12 +450,10 @@ def diff_version(
         return FormVersionDiff(from_number=number, to="draft", questions=questions, sections=sections)
     if against is not None:
         if not against.isdigit():
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, 'against must be a version number or "draft"'
-            )
+            raise AppError(422, "forms.bad_compare_target")
         base = repository.get_version(db, form.id, int(against))
         if base is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
+            raise AppError(404, "forms.version_not_found")
     else:
         base = repository.get_version(db, form.id, number - 1) if number > 1 else None
     questions, sections = _diff(base.snapshot if base else None, version.snapshot)
@@ -478,7 +469,7 @@ def restore_version(db: Session, *, form_id: int, number: int, employee: Employe
     _ensure_creator(form, employee.id)
     version = repository.get_version(db, form.id, number)
     if version is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
+        raise AppError(404, "forms.version_not_found")
     snapshot = copy.deepcopy(version.snapshot or {})
     fields = [
         {k: v for k, v in f.items() if k in SNAPSHOT_FIELD_ATTRS}
@@ -508,9 +499,7 @@ def _merged_settings(form: Form, patch: FormSettingsPatch) -> dict:
     try:
         return FormSettings.model_validate(merged).model_dump()
     except ValidationError as exc:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid settings: {exc.errors()[0]['msg']}"
-        ) from None
+        raise AppError(422, "forms.invalid_settings", error=exc.errors()[0]['msg']) from None
 
 
 def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal) -> Form:
@@ -562,7 +551,7 @@ def duplicate_form(db: Session, *, form_id: int, employee: EmployeePrincipal) ->
     """A fresh, unpublished copy of the draft, with no responses or versions."""
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to duplicate this form")
+        raise AppError(403, "forms.duplicate_denied")
 
     data = {key: copy.deepcopy(getattr(form, key)) for key in _COPIED_FORM_ATTRS}
     data["name"] = f"{form.name[:248]} (copy)"
@@ -588,12 +577,9 @@ def rotate_public_token(
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this form")
+        raise AppError(403, "forms.manage_denied")
     if form.type != "questionnaire" or "customer" not in (form.submitter_type or []):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Public link is only available for questionnaires that accept customer submissions",
-        )
+        raise AppError(409, "forms.public_link_unavailable")
     # the token itself is never logged: anyone holding it can answer
     audit.record(db, "form.public_link_rotated", entity=form)
     return repository.set_public_token(db, form, _new_public_token())
@@ -604,7 +590,7 @@ def revoke_public_token(
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this form")
+        raise AppError(403, "forms.manage_denied")
     if form.public_token:
         audit.record(db, "form.public_link_revoked", entity=form)
     return repository.set_public_token(db, form, None)
@@ -634,7 +620,7 @@ def update_form(
         data["sections"] = [s.model_dump() for s in payload.sections]
     if "settings" in data:
         if payload.settings is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "settings can't be null")
+            raise AppError(422, "forms.settings_null")
         data["settings"] = _merged_settings(form, payload.settings)
     fields = _field_rows(payload.fields) if payload.fields is not None else None
     validate_branching(
@@ -680,7 +666,7 @@ def toggle_active(
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_manage_form(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to modify this form")
+        raise AppError(403, "forms.modify_denied")
     before = audit.snapshot(form)
     if active and has_unpublished_changes(form):
         # going live means going live with the draft
@@ -697,7 +683,7 @@ def reveal_form_results(
 ) -> Form:
     form = get_form(db, form_id, organisation_id=employee.organisation_id)
     if not access.can_review(employee, form):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to reveal results")
+        raise AppError(403, "forms.reveal_denied")
     if not form.results_revealed:
         audit.record(db, "form.results_revealed", entity=form)
     form.results_revealed = True

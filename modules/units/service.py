@@ -1,9 +1,9 @@
 from typing import Optional
 
-from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from common.errors import AppError
 from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal
 
@@ -20,13 +20,13 @@ def resolve_organisation(viewer: EmployeePrincipal, requested: Optional[int]) ->
         return viewer.organisation_id
     if viewer.is_platform_admin:
         return requested
-    raise HTTPException(status.HTTP_404_NOT_FOUND, "Organisation not found")
+    raise AppError(404, "organisations.not_found")
 
 
 def _ensure_unit(db: Session, unit_id: int, organisation_id: int) -> Unit:
     unit = repository.get_unit(db, unit_id)
     if unit is None or unit.organisation_id != organisation_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unit not found")
+        raise AppError(404, "units.not_found")
     return unit
 
 
@@ -44,11 +44,11 @@ def create_unit(db: Session, *, payload: UnitCreate, organisation_id: int) -> Un
     if payload.external_id:
         existing = repository.get_unit_by_external_id(db, payload.external_id)
         if existing:
-            raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
+            raise AppError(409, "employees.external_id_in_use")
     if payload.parent_unit_id is not None:
         parent = repository.get_unit(db, payload.parent_unit_id)
         if parent is None or parent.organisation_id != organisation_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent unit not found in this organisation")
+            raise AppError(400, "units.parent_not_found")
     unit = repository.create_unit(
         db,
         name=payload.name,
@@ -72,15 +72,15 @@ def update_unit(db: Session, unit_id: int, organisation_id: int, *, payload: Uni
     if "external_id" in data and data["external_id"]:
         existing = repository.get_unit_by_external_id(db, data["external_id"])
         if existing and existing.id != unit_id:
-            raise HTTPException(status.HTTP_409_CONFLICT, "External ID already in use")
+            raise AppError(409, "employees.external_id_in_use")
     if "parent_unit_id" in data and data["parent_unit_id"] is not None:
         parent = repository.get_unit(db, data["parent_unit_id"])
         if parent is None or parent.organisation_id != organisation_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent unit not found in this organisation")
+            raise AppError(400, "units.parent_not_found")
         if data["parent_unit_id"] == unit_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be its own parent")
+            raise AppError(400, "units.own_parent")
         if data["parent_unit_id"] in repository.get_descendant_unit_ids(db, unit_id):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A unit cannot be moved under one of its own sub-units")
+            raise AppError(400, "units.under_own_child")
     before = audit.snapshot(unit)
     repository.update_unit(db, unit, data=data)
     audit.record_changes(db, unit, before)
@@ -98,7 +98,4 @@ def delete_unit(db: Session, unit_id: int, organisation_id: int) -> None:
     except IntegrityError:
         # employees, assignments or child units still point at it
         db.rollback()
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "This unit is still in use (employees, assignments or sub-units); move them first",
-        )
+        raise AppError(409, "units.in_use")

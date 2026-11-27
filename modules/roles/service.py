@@ -1,5 +1,6 @@
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
+from common.errors import AppError
 
 from modules.audit import service as audit
 
@@ -14,16 +15,14 @@ def _ensure_role(db: Session, role_id: int, organisation_id: int) -> Role:
     # so its existence does not leak.
     role = repository.get_role(db, role_id, organisation_id)
     if role is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Role not found")
+        raise AppError(404, "roles.not_found")
     return role
 
 
 def _ensure_permission(db: Session, permission_id: int) -> Permission:
     permission = repository.get_permission(db, permission_id)
     if permission is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, f"Permission {permission_id} not found"
-        )
+        raise AppError(404, "roles.permission_not_found", permission_id=permission_id)
     return permission
 
 
@@ -35,9 +34,14 @@ def _ensure_permissions_exist(db: Session, permission_ids: list[int]) -> None:
     found_ids = {p.id for p in found}
     missing = [pid for pid in unique_ids if pid not in found_ids]
     if missing:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, f"Permissions not found: {missing}"
-        )
+        raise AppError(404, "roles.permissions_not_found", missing=missing)
+
+
+def _ensure_permissions_editable(role: Role) -> None:
+    """The admin role always holds the whole catalogue (new permissions
+    reach it by migration), so nobody can lock the organisation admin out."""
+    if role.is_system:
+        raise AppError(403, "roles.system_permissions_locked")
 
 
 def _current_permission_ids(role: Role) -> set[int]:
@@ -63,9 +67,9 @@ def _record_permissions_changed(db: Session, role: Role, before: set[int], after
                      data={"system_role": True} if role.is_system else None)
 
 
-def ensure_role_in_organisation(db: Session, role_id: int, organisation_id: int) -> None:
+def ensure_role_in_organisation(db: Session, role_id: int, organisation_id: int) -> Role:
     """For other modules (employees) that accept a role id from the client."""
-    _ensure_role(db, role_id, organisation_id)
+    return _ensure_role(db, role_id, organisation_id)
 
 
 def get_role(db: Session, role_id: int, organisation_id: int) -> Role:
@@ -86,7 +90,7 @@ def create_role(
     db: Session, *, payload: RoleCreate, organisation_id: int, employee_id: int
 ) -> Role:
     if repository.get_role_by_name(db, payload.name, organisation_id) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Role name already exists")
+        raise AppError(409, "roles.name_taken")
     if payload.permission_ids:
         _ensure_permissions_exist(db, payload.permission_ids)
     role = repository.create_role(
@@ -116,13 +120,9 @@ def update_role(
         return role
     if "name" in data and data["name"] != role.name:
         if role.is_system:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "System roles cannot be renamed"
-            )
+            raise AppError(403, "roles.system_not_renamable")
         if repository.get_role_by_name(db, data["name"], organisation_id) is not None:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "Role name already exists"
-            )
+            raise AppError(409, "roles.name_taken")
     before = audit.snapshot(role)
     repository.update_role(db, role, data=data)
     audit.record_changes(db, role, before)
@@ -133,14 +133,9 @@ def update_role(
 def delete_role(db: Session, *, role_id: int, organisation_id: int) -> None:
     role = _ensure_role(db, role_id, organisation_id)
     if role.is_system:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "System roles cannot be deleted"
-        )
+        raise AppError(403, "roles.system_not_deletable")
     if repository.role_has_employees(db, role.id):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Role is assigned to employees; reassign before deletion",
-        )
+        raise AppError(409, "roles.in_use")
     audit.record_deleted(db, role)
     repository.delete_role(db, role)
     db.commit()
@@ -155,6 +150,7 @@ def replace_role_permissions(
     employee_id: int,
 ) -> Role:
     role = _ensure_role(db, role_id, organisation_id)
+    _ensure_permissions_editable(role)
     _ensure_permissions_exist(db, permission_ids)
     before = _current_permission_ids(role)
     repository.replace_role_permissions(
@@ -174,6 +170,7 @@ def add_role_permissions(
     employee_id: int,
 ) -> Role:
     role = _ensure_role(db, role_id, organisation_id)
+    _ensure_permissions_editable(role)
     _ensure_permissions_exist(db, permission_ids)
     before = _current_permission_ids(role)
     repository.add_role_permissions(
@@ -188,6 +185,7 @@ def remove_role_permission(
     db: Session, *, role_id: int, permission_id: int, organisation_id: int
 ) -> None:
     role = _ensure_role(db, role_id, organisation_id)
+    _ensure_permissions_editable(role)
     _ensure_permission(db, permission_id)
     before = _current_permission_ids(role)
     if repository.remove_role_permission(db, role_id, permission_id):
@@ -206,7 +204,7 @@ def create_permission(
         db, payload.resource, payload.action
     )
     if existing is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Permission already exists")
+        raise AppError(409, "roles.permission_exists")
     permission = repository.create_permission(
         db, resource=payload.resource, action=payload.action
     )

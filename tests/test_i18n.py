@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # routers switched off (E0.3): their messages never reach anyone
 PARKED = ("keywords", "mentions", "mention_notification_deliveries", "mention_notification_rules",
           "tenants", "platform_configs")
-ERRORS = {"HTTPException", "CodedHTTPException", "AuthError"}
+ERRORS = {"HTTPException", "CodedHTTPException"}
 
 
 def _placeholders(text: str) -> set[str]:
@@ -78,6 +78,36 @@ def test_every_language_has_every_message_with_the_same_placeholders():
 def test_every_raised_error_message_has_a_catalogue_entry():
     missing = [f"{where}: {text!r}" for where, text in _raised_messages() if i18n.match(_example(text)) is None]
     assert not missing, "add these to common/i18n/messages/en (and every other language):\n" + "\n".join(missing)
+
+
+# calls whose first string argument is a catalogue code (forms' fail() is its
+# branching check's shorthand for AppError(422, code))
+CODED = {"AppError": 1, "AuthError": 0, "fail": 0}
+
+
+def _raised_codes():
+    for path in sorted((ROOT / "modules").rglob("*.py")) + sorted((ROOT / "common").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if any(f"modules/{m}/" in rel for m in PARKED):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CODED:
+                index = CODED[node.func.id]
+                arg = node.args[index] if len(node.args) > index else None
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    yield f"{rel}:{node.lineno}", arg.value, {k.arg for k in node.keywords} - {"headers", "status_code"}
+
+
+def test_every_raised_code_is_in_the_catalogue_with_its_values():
+    codes = i18n.catalogue.codes()
+    english = i18n.entries("en")
+    problems = []
+    for where, code, params in _raised_codes():
+        if code not in codes:
+            problems.append(f"{where}: unknown code {code!r}")
+        elif params != _placeholders(english[code]):
+            problems.append(f"{where}: {code} takes {sorted(_placeholders(english[code]))}, given {sorted(params)}")
+    assert not problems, "\n".join(problems)
 
 
 def test_accept_language_picks_the_best_language_we_speak():

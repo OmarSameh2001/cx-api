@@ -45,14 +45,19 @@ def get_role_claims(db: Session, role_id: int) -> Optional[tuple[str, bool, list
     return rows[0].name, rows[0].is_system, permissions
 
 
-def _principal(db: Session, principal_type: str, principal_id: int):
+def _principal(db: Session, principal_type: str, principal_id: int, *, lock: bool = False):
+    """The account row. With lock, it's locked until the commit and read
+    fresh, so two sign-ins or refreshes at the same moment change the
+    session list one after the other instead of overwriting each other."""
     if principal_type == "employee":
+        if lock:
+            return db.get(Employee, principal_id, with_for_update=True, populate_existing=True)
         return db.get(Employee, principal_id)
     return None
 
 
 def add_refresh_jti(db: Session, principal_type: str, principal_id: int, jti: str) -> None:
-    row = _principal(db, principal_type, principal_id)
+    row = _principal(db, principal_type, principal_id, lock=True)
     if row is None:
         return
     tokens = [*(row.refresh_tokens or []), jti]
@@ -66,7 +71,7 @@ def has_refresh_jti(db: Session, principal_type: str, principal_id: int, jti: st
 
 
 def remove_refresh_jti(db: Session, principal_type: str, principal_id: int, jti: str) -> int:
-    row = _principal(db, principal_type, principal_id)
+    row = _principal(db, principal_type, principal_id, lock=True)
     if row is None:
         return 0
     current = row.refresh_tokens or []
@@ -78,7 +83,7 @@ def remove_refresh_jti(db: Session, principal_type: str, principal_id: int, jti:
 
 
 def clear_refresh_jtis(db: Session, principal_type: str, principal_id: int) -> int:
-    row = _principal(db, principal_type, principal_id)
+    row = _principal(db, principal_type, principal_id, lock=True)
     if row is None:
         return 0
     count = len(row.refresh_tokens or [])

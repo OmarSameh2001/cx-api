@@ -18,6 +18,7 @@ import redis
 from fastapi import Request, status
 from loguru import logger
 
+from common import request_context
 from common.errors import CodedHTTPException
 from common.services.redis_client import get_redis, key as redis_key
 from config import RedisEnv
@@ -135,12 +136,11 @@ limiter = (
 
 
 def client_ip(request: Request) -> str:
-    # Behind one proxy (the deployment's), the right-most X-Forwarded-For
-    # entry is the one it added; entries to its left are client-supplied.
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[-1].strip()
-    return request.client.host if request.client else "unknown"
+    # only the X-Forwarded-For entries our own proxies added (TRUSTED_PROXY_COUNT)
+    ip = request_context.client_ip_from(
+        request.headers.get("x-forwarded-for"), request.client.host if request.client else None
+    )
+    return ip or "unknown"
 
 
 def _too_many(retry_after: float) -> CodedHTTPException:

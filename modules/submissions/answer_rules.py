@@ -10,9 +10,9 @@ import re
 from datetime import date
 from typing import Any
 
-from fastapi import HTTPException, status
 from pydantic import EmailStr, TypeAdapter, ValidationError
 
+from common.errors import AppError
 from modules.forms.model import Form, FormField
 
 MAX_TEXT_LENGTH = 5000
@@ -99,7 +99,4 @@ def validate_answer_values(
             continue
         problem = _problem(field, value, draft=draft)
         if problem:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                f"Answer to \"{field.question}\" {problem}",
-            )
+            raise AppError(422, "submissions.answer_invalid", question=field.question, problem=problem)
