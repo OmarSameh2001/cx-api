@@ -1,3 +1,4 @@
+import hmac
 from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -10,8 +11,9 @@ from modules.audit import service as audit
 from modules.auth.dto import EmployeePrincipal, Principal
 from modules.events import service as events
 from modules.forms import access as form_access
+from modules.forms import behaviour
 from modules.forms import repository as forms_repository
-from modules.forms.dto import DISPLAY_TYPES, respondent_config
+from modules.forms.dto import DISPLAY_TYPES, EndingScreen, respondent_config
 from modules.forms.model import Form, FormField
 from modules.forms.service import as_answered, branch_key, ordered_sections, published
 from modules.results import service as results_service
@@ -95,6 +97,36 @@ def resolve_file_answers(
         )
         out[str(field.id)] = stored
         used.append(file)
+    return out, used
+
+
+def resolve_keeping_stored(
+    db: Session, form: Form, answers: dict[str, Any], *, stored: Optional[dict[str, Any]], actor,
+    submission_id: int,
+) -> tuple[dict[str, Any], list]:
+    """resolve_file_answers for a submission that already has answers: a file
+    answer sent back as stored (same file, no upload token) is kept as it is.
+    A public respondent can't prove a stored file is theirs again, since its
+    token was only handed out at upload."""
+    from modules.files import repository as files_repository
+
+    stored = stored or {}
+    kept = {
+        k for k, v in answers.items()
+        if isinstance(v, dict) and "token" not in v and isinstance(stored.get(k), dict)
+        and stored[k].get("file_id") == v.get("file_id")
+    }
+    out, used = resolve_file_answers(
+        db, form, {k: v for k, v in answers.items() if k not in kept}, actor=actor, submission_id=submission_id,
+    )
+    if kept:
+        attached = {f.id: f for f in files_repository.attached_files(db, "submission", [submission_id])}
+        for k in kept:
+            file = attached.get(stored[k]["file_id"])
+            if file is None:
+                raise AppError(422, "submissions.answer_invalid", question=k, problem="names a file that is gone")
+            out[k] = stored[k]
+            used.append(file)
     return out, used
 
 
@@ -332,8 +364,7 @@ def regrade_submission(db: Session, submission: Submission, *, update_score: boo
     form = as_answered(submission)
     answers = submission.answers or {}
     result = grade(form, answers, _visited_section_ids(form, answers))
-    unit_id = submission.employee.unit_id if submission.employee is not None else None
-    results_service.replace_values(db, submission, form, result.questions, unit_id=unit_id)
+    results_service.replace_values(db, submission, form, result.questions, unit_id=counted_unit(db, submission))
     same = submission.score is not None and abs(submission.score - result.total) < 1e-9
     if not same and update_score:
         audit.record(
@@ -365,6 +396,14 @@ def rebuild_results(
             counts[regrade_submission(db, submission, update_score=update_score)] += 1
         after = batch[-1].id
         db.commit()
+
+
+def counted_unit(db: Session, submission: Submission) -> Optional[int]:
+    """The unit a finished submission's answers count under: the respondent's
+    unit, or (anonymous and public ones) the unit its rows already have."""
+    if submission.employee is not None:
+        return submission.employee.unit_id
+    return results_service.unit_of(db, submission.id)
 
 
 def _ensure_submitter_allowed(form: Form, principal_type: str) -> None:
@@ -417,19 +456,32 @@ def _load(db: Session, submission_id: int, principal: Principal) -> Submission:
     return submission
 
 
-def _ensure_owner(submission: Submission, principal: Principal) -> None:
+def _anonymous_key(form_id: int, principal: Principal) -> str:
+    return behaviour.respondent_key(form_id, principal.principal, principal.id)
+
+
+def is_owner(submission: Submission, principal: Principal) -> bool:
+    """The caller answered it: by id, or on an anonymous form (no id stored)
+    by the keyed stand-in only they produce."""
     user_id, customer_id = _principal_ids(principal)
     if user_id is not None and submission.user_id == user_id:
-        return
+        return True
     if customer_id is not None and submission.customer_id == customer_id:
-        return
-    raise AppError(403, "submissions.own_only")
+        return True
+    if submission.user_id is None and submission.customer_id is None and submission.respondent_key:
+        return hmac.compare_digest(submission.respondent_key, _anonymous_key(submission.form_id, principal))
+    return False
+
+
+def _ensure_owner(submission: Submission, principal: Principal) -> None:
+    if not is_owner(submission, principal):
+        raise AppError(403, "submissions.own_only")
 
 
 def _ensure_can_view(submission: Submission, principal: Principal) -> None:
     if isinstance(principal, EmployeePrincipal):
         # owners always can
-        if submission.user_id == principal.id:
+        if is_owner(submission, principal):
             return
         # same org + reviewer of the form
         if submission.form is not None and submission.form.organisation_id == principal.organisation_id:
@@ -472,33 +524,63 @@ def expire_abandoned_attempts(db: Session) -> int:
 
 def get_respondent_form(
     db: Session, *, submission_id: int, principal: Principal
-) -> Form:
-    """The form behind the caller's own in-progress submission. Tying the
-    questions to a started attempt means they can't be read before the timer
-    runs, and the respondent view never carries the correct answers."""
+) -> tuple[Form, Submission]:
+    """The form behind the caller's own in-progress submission (or a
+    submitted one they may still change). Tying the questions to a started
+    attempt means they can't be read before the timer runs, and the
+    respondent view never carries the correct answers."""
     submission = _load(db, submission_id, principal)
     _ensure_owner(submission, principal)
     if _check_and_apply_expiry(db, submission):
         raise AppError(409, "submissions.expired")
-    _ensure_in_progress(submission)
-    return as_answered(submission)
+    if not behaviour.can_edit(submission.form, submission):
+        _ensure_in_progress(submission)
+    return as_answered(submission), submission
 
 
 def _ensure_attempt_quota(
-    db: Session, form: Form, principal: Principal
+    db: Session, form: Form, principal: Principal, *, respondent_key: Optional[str] = None
 ) -> int:
-    """Return the attempt_number for the *new* attempt; raise if over quota."""
-    user_id, customer_id = _principal_ids(principal)
+    """Return the attempt_number for the *new* attempt; raise if over quota.
+    One response per person (T2.2.4) caps it at 1."""
+    user_id, customer_id = (None, None) if respondent_key else _principal_ids(principal)
     used = repository.count_finalized_attempts(
-        db, form_id=form.id, user_id=user_id, customer_id=customer_id
+        db, form_id=form.id, user_id=user_id, customer_id=customer_id, respondent_key=respondent_key,
     )
-    if form.max_attempts is not None and used >= form.max_attempts:
-        raise AppError(409, "submissions.attempts_used", max_attempts=form.max_attempts)
+    raise_if_over_quota(form, used, prefix="submissions")
     return used + 1
 
 
+def raise_if_over_quota(form, used: int, *, prefix: str) -> None:
+    limit = behaviour.max_attempts(form)
+    if limit is None or used < limit:
+        return
+    if behaviour.settings_of(form).one_response_per_person:
+        raise AppError(409, f"{prefix}.already_responded")
+    raise AppError(409, f"{prefix}.max_attempts" if prefix == "public_forms" else "submissions.attempts_used",
+                   max_attempts=limit)
+
+
+def prefilled(form, view, token: Optional[str], *, code: str) -> Optional[behaviour.Prefill]:
+    """A prefilled link's values, with its answers checked against the
+    version being answered (a link made for an older version keeps only
+    what still fits)."""
+    prefill = behaviour.read_prefill(form, token, code=code)
+    if prefill is None:
+        return None
+    known = _answerable_ids(view)
+    file_ids = {str(f.id) for f in view.fields if f.type == "file"}
+    answers = {k: v for k, v in prefill.answers.items() if k in known and k not in file_ids}
+    try:
+        validate_answer_values(view, answers, draft=True)
+    except AppError:
+        answers = {}
+    prefill.answers = answers
+    return prefill
+
+
 def start_submission(
-    db: Session, *, form_id: int, principal: Principal
+    db: Session, *, form_id: int, principal: Principal, prefill: Optional[str] = None
 ) -> Submission:
     form = forms_repository.get_form(db, form_id)
     if form is None:
@@ -509,13 +591,17 @@ def start_submission(
         raise AppError(404, "forms.not_found")
     _ensure_submitter_allowed(form, principal.principal)
     _ensure_user_can_access_form(form, principal)
-    if published(form) is None:
+    view = published(form)
+    if view is None:
         raise AppError(409, "submissions.form_unpublished")
+    behaviour.ensure_taking_responses(form, prefix="submissions")
 
-    user_id, customer_id = _principal_ids(principal)
+    # an anonymous form stores no id, only the keyed stand-in (T2.2.8)
+    key = _anonymous_key(form.id, principal) if behaviour.is_anonymous(form) else None
+    user_id, customer_id = (None, None) if key else _principal_ids(principal)
 
     open_sub = repository.find_open_submission(
-        db, form_id=form.id, user_id=user_id, customer_id=customer_id
+        db, form_id=form.id, user_id=user_id, customer_id=customer_id, respondent_key=key,
     )
     if open_sub is not None:
         # if it has gone past expiry+grace, expire it and proceed to a fresh attempt
@@ -525,7 +611,8 @@ def start_submission(
             # an attempt started before a publish carries on with its version
             return open_sub
 
-    attempt_number = _ensure_attempt_quota(db, form, principal)
+    attempt_number = _ensure_attempt_quota(db, form, principal, respondent_key=key)
+    filled = prefilled(form, view, prefill, code="submissions.prefill_invalid")
 
     expires_at: Optional[datetime] = None
     if form.type == "exam" and form.time_limit_minutes:
@@ -539,6 +626,11 @@ def start_submission(
         expires_at=expires_at,
         attempt_number=attempt_number,
         form_version_id=form.current_version_id,
+        respondent_key=key,
+        hidden_fields=(filled.hidden or None) if filled else None,
+        answers=filled.answers if filled else None,
+        # the order this attempt is shown, kept for the attempt (T2.2.9)
+        question_order=behaviour.shuffled_order(view, behaviour.new_seed()),
     )
 
 
@@ -580,6 +672,8 @@ def submit_submission(
     if _check_and_apply_expiry(db, submission):
         raise AppError(409, "submissions.expired")
     _ensure_in_progress(submission)
+    # an attempt still open when the form closed can't be handed in after it
+    behaviour.ensure_taking_responses(submission.form, prefix="submissions", grace=GRACE)
 
     if answers:
         merged = dict(submission.answers or {})
@@ -676,6 +770,16 @@ def list_submissions(
     return items, total
 
 
+def is_anonymous_row(submission: Submission) -> bool:
+    """Answered on an anonymous form: nobody's id or contact details are stored."""
+    return submission.user_id is None and submission.customer_id is None and submission.contact is None \
+        and bool(submission.respondent_key)
+
+
+def submitter_name(submission: Submission) -> Optional[str]:
+    return _submitter_name(submission)
+
+
 def _submitter_name(submission: Submission) -> Optional[str]:
     if submission.employee is not None:
         return submission.employee.username
@@ -692,10 +796,7 @@ def serialize_read(submission: Submission, *, principal: Principal) -> Submissio
     """Return a SubmissionRead with score nulled out when results are not yet revealed."""
     form = submission.form
 
-    is_owner = (
-        (principal.principal == "employee" and submission.user_id == principal.id)
-        or (principal.principal == "customer" and submission.customer_id == principal.id)
-    )
+    owner = is_owner(submission, principal)
 
     is_reviewer = False
     if isinstance(principal, EmployeePrincipal) and form is not None:
@@ -704,13 +805,16 @@ def serialize_read(submission: Submission, *, principal: Principal) -> Submissio
 
     revealed = bool(
         is_reviewer
-        or (is_owner and (submission.results_revealed or (form and form.results_revealed)))
+        or (owner and (submission.results_revealed or (form and form.results_revealed)))
     )
 
     read = SubmissionRead.model_validate(submission)
     read.submitter_name = _submitter_name(submission)
+    read.anonymous = is_anonymous_row(submission)
     if not revealed:
         read.score = None
+    if owner and form is not None:
+        read.editable_until = behaviour.editable_until(form, submission)
     return read
 
 
@@ -734,11 +838,7 @@ def serialize_detail(
     Questions come from the version answered, not the form as it is now."""
     form = as_answered(submission) if submission.form is not None else None
 
-    is_owner = False
-    if principal.principal == "employee" and submission.user_id == principal.id:
-        is_owner = True
-    elif principal.principal == "customer" and submission.customer_id == principal.id:
-        is_owner = True
+    owner = is_owner(submission, principal)
 
     is_reviewer = False
     if isinstance(principal, EmployeePrincipal) and form is not None:
@@ -747,8 +847,10 @@ def serialize_detail(
 
     revealed = bool(
         is_reviewer
-        or (is_owner and (submission.results_revealed or (form and form.results_revealed)))
+        or (owner and (submission.results_revealed or (form and form.results_revealed)))
     )
+    # an owner who may still change a response sees what they answered
+    editing = owner and form is not None and behaviour.editable_until(form, submission) is not None
 
     # A finalized submission's answers were pruned to its path, and the
     # branching answers sit on visited sections, so the walk recovers the path.
@@ -777,16 +879,20 @@ def serialize_detail(
                 data.config = respondent_config(f.type, f.config)
             fields.append(data)
 
-    answers = submission.answers if (is_owner or is_reviewer) and revealed else None
+    answers = submission.answers if ((owner or is_reviewer) and revealed) or editing else None
 
     base = SubmissionRead.model_validate(submission)
     base.submitter_name = _submitter_name(submission)
+    base.anonymous = is_anonymous_row(submission)
     if not revealed:
         base.score = None
+    if owner and form is not None:
+        base.editable_until = behaviour.editable_until(form, submission)
     return SubmissionDetail(
         **base.model_dump(),
         # personal details: for the form's reviewers only
         contact=submission.contact if is_reviewer else None,
+        hidden_fields=submission.hidden_fields if is_reviewer else None,
         answers=answers,
         scores=submission.scores if revealed else None,
         fields=fields,
@@ -804,3 +910,64 @@ def delete_submission(
 
     files.delete_attached(db, attached_type="submission", attached_ids=[submission.id])
     repository.delete_submission(db, submission)
+
+
+# --- after submitting (E2.2) ----------------------------------------------------
+
+
+def ending_for(submission: Submission) -> Optional[EndingScreen]:
+    """The ending screen a finished submission earned (T2.2.2), or None for
+    the default thank-you."""
+    if submission.status not in ("submitted", "late") or submission.form is None:
+        return None
+    form = as_answered(submission)
+    visited = _visited_section_ids(form, submission.answers or {})
+    return behaviour.pick_ending(
+        form, score=submission.score, last_section_id=behaviour.last_section_on_path(form, visited),
+    )
+
+
+def apply_edit(db: Session, submission: Submission, answers: dict[str, Any], *, actor) -> None:
+    """Replaces a submitted response's answers within the form's edit window
+    (T2.2.11): checked, scored and stored as a submit would, against the
+    version answered. Logged and evented. No commit."""
+    form = as_answered(submission)
+    if behaviour.editable_until(form, submission) is None:
+        raise AppError(409, "submissions.not_editable")
+    if not behaviour.can_edit(form, submission):
+        raise AppError(409, "submissions.edit_window_over")
+    behaviour.ensure_taking_responses(submission.form, prefix="submissions", grace=GRACE)
+
+    visited = _visited_section_ids(form, answers or {})
+    final_answers = _prune_to_path(form, answers or {}, visited)
+    validate_answer_values(form, final_answers)
+    _validate_required(form, final_answers, visited)
+    final_answers, used = resolve_keeping_stored(
+        db, form, final_answers, stored=submission.answers, actor=actor, submission_id=submission.id,
+    )
+    attach_answer_files(db, submission, used, form)
+
+    before = submission.score
+    submission.answers = final_answers
+    submission.edited_at = _now()
+    result = grade(form, final_answers, visited)
+    submission.score = result.total
+    submission.scores = result.as_json(form)
+    results_service.replace_values(db, submission, form, result.questions, unit_id=counted_unit(db, submission))
+    changed = before is None or abs(before - result.total) > 1e-9
+    audit.record(
+        db, "submission.edited", entity_type="submission", entity_id=submission.id,
+        organisation_id=form.organisation_id,
+        changes={"score": [before, result.total]} if changed else None,
+        data={"form_id": submission.form_id, "version_id": submission.form_version_id},
+    )
+    emit_submission_event(db, "submission.edited", submission, organisation_id=form.organisation_id)
+
+
+def edit_submission(
+    db: Session, *, submission_id: int, answers: dict[str, Any], principal: Principal
+) -> Submission:
+    submission = _load(db, submission_id, principal)
+    _ensure_owner(submission, principal)
+    apply_edit(db, submission, answers, actor=principal)
+    return repository.save(db, submission)

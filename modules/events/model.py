@@ -22,6 +22,8 @@ EVENT_TYPES = (
     "submission.late",
     "submission.graded",
     "submission.expired",
+    # the respondent changed a submitted response (T2.2.11)
+    "submission.edited",
     "form.published",
     "file.uploaded",
 )

@@ -19,6 +19,8 @@ from .dto import (
     FormVersionDiff,
     FormVersionRead,
     FormVersionSummary,
+    PrefillLinkCreate,
+    PrefillLinkRead,
 )
 
 
@@ -157,6 +159,18 @@ def revoke_public_token(
     employee: EmployeePrincipal = Depends(current_employee),
 ):
     return controller.revoke_public_token(db, form_id, employee)
+
+
+@router.post("/{form_id}/prefill-links", response_model=PrefillLinkRead, status_code=status.HTTP_201_CREATED)
+def create_prefill_link(
+    form_id: int,
+    payload: PrefillLinkCreate,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    """A signed prefilled link (T2.2.7) for the form's public link or its
+    employee page: add ?prefill=<token> to it."""
+    return controller.create_prefill_link(db, form_id, payload, employee)
 
 
 @router.delete("/{form_id}", status_code=status.HTTP_204_NO_CONTENT)

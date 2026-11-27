@@ -15,5 +15,11 @@
   "finalized_not_deletable": "لا يمكن حذف الردود المكتملة",
   "field_required": "السؤال {id} ({question}) مطلوب",
   "not_your_unit": "النموذج غير مسند إلى وحدتك",
-  "not_assigned": "النموذج غير مسند إليك"
+  "not_assigned": "النموذج غير مسند إليك",
+  "not_open_yet": "يفتح هذا النموذج في {opens_at}",
+  "closed_on": "توقف هذا النموذج عن استقبال الردود في {closes_at}",
+  "already_responded": "لقد أجبت على هذا النموذج من قبل",
+  "prefill_invalid": "هذا الرابط غير صالح أو انتهت صلاحيته",
+  "not_editable": "لا يمكن تغيير هذا الرد",
+  "edit_window_over": "انتهى وقت تغيير هذا الرد"
 }

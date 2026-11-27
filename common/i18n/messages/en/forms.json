@@ -46,5 +46,18 @@
   "min_not_below_max": "min must be less than max",
   "slider_too_many_steps": "a slider has at most {max} steps",
   "slider_whole_steps": "max - min must be a whole number of steps",
-  "video_url": "url must be a YouTube or Vimeo link"
+  "video_url": "url must be a YouTube or Vimeo link",
+  "closed_message": "Not taking responses: {message}",
+  "notify_unknown_people": "These people can't be notified because they aren't in your organisation: {ids}",
+  "prefill_unpublished": "Publish the form before making prefilled links",
+  "unknown_hidden_field": "\"{key}\" isn't one of this form's hidden fields",
+  "prefill_unknown_question": "Question {id} isn't in the published form",
+  "prefill_file_question": "A file question can't be prefilled",
+  "prefill_too_long": "The prefilled values are too long for a link",
+  "redirect_url_http": "redirect_url must be an http:// or https:// address",
+  "ending_score_range": "an ending's min_score can't be above its max_score",
+  "dates_need_zone": "opens_at and closes_at need a time zone (e.g. 2026-12-01T09:00:00Z)",
+  "closes_before_opens": "closes_at must be after opens_at",
+  "ending_ids_unique": "ending ids must be unique",
+  "hidden_keys_unique": "hidden field keys must be unique"
 }

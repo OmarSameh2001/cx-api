@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from modules.forms.dto import FormTheme, SectionTarget, respondent_config
 
@@ -21,6 +21,22 @@ def _theme_or_none(v: Any) -> Optional[FormTheme]:
 
 class SubmissionStartRequest(BaseModel):
     form_id: int
+    # a signed prefilled link's token (T2.2.7); used when a new attempt starts
+    prefill: Optional[str] = Field(default=None, max_length=8192)
+
+
+class SubmissionEdit(BaseModel):
+    """A submitted response's new answers, all of them (T2.2.11)."""
+    answers: dict[str, Any]
+
+
+class EndingRead(BaseModel):
+    """The ending screen a response earned (T2.2.2)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    message: Optional[str] = None
+    redirect_url: Optional[str] = None
 
 
 class SubmissionDraftUpdate(BaseModel):
@@ -47,6 +63,13 @@ class SubmissionRead(BaseModel):
     customer_id: Optional[int]
     user_id: Optional[int]
     submitter_name: Optional[str] = None
+    # E2.2: the respondent may change it until then (owners only)
+    editable_until: Optional[datetime] = None
+    edited_at: Optional[datetime] = None
+    # the ending screen, on the response to submit only
+    ending: Optional[EndingRead] = None
+    # on an anonymous form nobody's id is stored
+    anonymous: bool = False
 
 
 class SubmissionDetailField(BaseModel):
@@ -80,6 +103,8 @@ class SubmissionContact(BaseModel):
 class SubmissionDetail(SubmissionRead):
     # public submissions: the contact details as given with this submission
     contact: Optional[SubmissionContact] = None
+    # values from the prefilled link (reviewers only)
+    hidden_fields: Optional[dict[str, Any]] = None
     answers: Optional[dict[str, Any]] = None
     # how the score was reached: section scores and points per question
     # (reveal-gated like the score)
@@ -133,6 +158,9 @@ class RespondentForm(BaseModel):
     theme: Optional[FormTheme] = None
     # links to the images the questions and the theme use, by file id
     media: dict[str, str] = {}
+    # E2.2: filled in from the form's settings by respondent_extras
+    show_progress: bool = False
+    anonymous: bool = False
 
     @field_validator("theme", mode="before")
     @classmethod

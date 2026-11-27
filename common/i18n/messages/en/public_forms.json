@@ -2,5 +2,18 @@
   "closed": "Form is not accepting submissions",
   "no_public_link": "This form is not available via public link",
   "no_customers": "This form does not accept customer submissions",
-  "max_attempts": "You have already submitted this form the maximum allowed times ({max_attempts})"
+  "max_attempts": "You have already submitted this form the maximum allowed times ({max_attempts})",
+  "not_open_yet": "This form opens on {opens_at}",
+  "closed_on": "This form stopped taking responses on {closes_at}",
+  "already_responded": "You have already answered this form",
+  "prefill_invalid": "This link is invalid or has expired",
+  "captcha_failed": "Please complete the check that you're not a robot",
+  "captcha_unavailable": "The robot check isn't working right now. Please try again in a moment",
+  "details_required": "Please fill in your details",
+  "device_required": "Your browser didn't send what this form needs. Please reload the page and try again",
+  "draft_not_found": "This resume link is invalid",
+  "response_not_found": "This link to change your response is invalid",
+  "draft_expired": "This saved draft has expired",
+  "draft_finished": "This draft was already submitted",
+  "resume_off": "This form can't be saved to finish later"
 }

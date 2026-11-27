@@ -55,7 +55,14 @@ def test_settings_are_stored_and_served(client, created):
     assert res.status_code == 201, res.text
     assert created[0].settings == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True, "theme": None}
     body = res.json()
-    assert body["settings"] == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True, "theme": None}
+    served = body["settings"]
+    assert {k: served[k] for k in ("time_limit_minutes", "max_attempts", "results_revealed", "theme")} == {
+        "time_limit_minutes": None, "max_attempts": 3, "results_revealed": True, "theme": None,
+    }
+    # E2.2 settings are served with their defaults, but not stored until set
+    assert (served["captcha"], served["anonymous"], served["endings"], served["edit_window_minutes"]) == (
+        True, False, [], None,
+    )
     # the old top-level copies are still served
     assert (body["max_attempts"], body["results_revealed"]) == (3, True)
 

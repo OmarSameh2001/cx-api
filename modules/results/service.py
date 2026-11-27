@@ -127,6 +127,11 @@ def replace_values(db: Session, submission, form, questions, *, unit_id: Optiona
     repository.add_values(db, build_values(submission, form, questions, unit_id=unit_id))
 
 
+def unit_of(db: Session, submission_id: int) -> Optional[int]:
+    """The unit a submission's rows count under now (kept through edits and regrades)."""
+    return repository.unit_of_values(db, submission_id)
+
+
 def _visible_units(employee: EmployeePrincipal) -> set[int]:
     units = set(employee.assigned_unit_ids or [])
     if employee.unit_id is not None:

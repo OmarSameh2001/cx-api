@@ -146,7 +146,10 @@ def count_finalized_attempts(
     form_id: int,
     user_id: Optional[int],
     customer_id: Optional[int],
+    respondent_key: Optional[str] = None,
 ) -> int:
+    """Finished attempts by one respondent: by id, or on an anonymous form by
+    respondent_key. Naming nobody counts nothing."""
     stmt = select(func.count()).select_from(Submission).where(
         Submission.form_id == form_id,
         Submission.status.in_(("submitted", "late")),
@@ -155,6 +158,10 @@ def count_finalized_attempts(
         stmt = stmt.where(Submission.user_id == user_id)
     elif customer_id is not None:
         stmt = stmt.where(Submission.customer_id == customer_id)
+    elif respondent_key is not None:
+        stmt = stmt.where(Submission.respondent_key == respondent_key)
+    else:
+        return 0
     return db.execute(stmt).scalar_one()
 
 
@@ -164,6 +171,7 @@ def find_open_submission(
     form_id: int,
     user_id: Optional[int],
     customer_id: Optional[int],
+    respondent_key: Optional[str] = None,
 ) -> Optional[Submission]:
     stmt = (
         select(Submission)
@@ -180,9 +188,15 @@ def find_open_submission(
         stmt = stmt.where(Submission.user_id == user_id)
     elif customer_id is not None:
         stmt = stmt.where(Submission.customer_id == customer_id)
+    elif respondent_key is not None:
+        stmt = stmt.where(
+            Submission.respondent_key == respondent_key,
+            Submission.user_id.is_(None),
+            Submission.customer_id.is_(None),
+        ).order_by(Submission.id.desc()).limit(1)
     else:
         return None
-    return db.execute(stmt).scalar_one_or_none()
+    return db.execute(stmt).scalars().first()
 
 
 def create_submission(
@@ -194,16 +208,23 @@ def create_submission(
     expires_at: Optional[datetime],
     attempt_number: int,
     form_version_id: Optional[int] = None,
+    respondent_key: Optional[str] = None,
+    hidden_fields: Optional[dict] = None,
+    answers: Optional[dict] = None,
+    question_order: Optional[dict] = None,
 ) -> Submission:
     submission = Submission(
         form_id=form_id,
         form_version_id=form_version_id,
-        answers={},
+        answers=answers or {},
         customer_id=customer_id,
         user_id=user_id,
         expires_at=expires_at,
         attempt_number=attempt_number,
         status="in_progress",
+        respondent_key=respondent_key,
+        hidden_fields=hidden_fields,
+        question_order=question_order,
     )
     db.add(submission)
     db.commit()

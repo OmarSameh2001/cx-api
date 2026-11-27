@@ -15,5 +15,11 @@
   "finalized_not_deletable": "Finalized submissions cannot be deleted",
   "field_required": "Field {id} ({question}) is required",
   "not_your_unit": "Form is not assigned to your unit",
-  "not_assigned": "Form is not assigned to you"
+  "not_assigned": "Form is not assigned to you",
+  "not_open_yet": "This form opens on {opens_at}",
+  "closed_on": "This form stopped taking responses on {closes_at}",
+  "already_responded": "You have already answered this form",
+  "prefill_invalid": "This link is invalid or has expired",
+  "not_editable": "This response can't be changed",
+  "edit_window_over": "The time to change this response is over"
 }

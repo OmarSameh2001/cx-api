@@ -13,6 +13,7 @@ from .dto import (
     RespondentForm,
     SubmissionDetail,
     SubmissionDraftUpdate,
+    SubmissionEdit,
     SubmissionFinalize,
     SubmissionRead,
     SubmissionStartRequest,
@@ -111,6 +112,17 @@ def submit_submission(
     principal: Principal = Depends(current_principal),
 ):
     return controller.submit_submission(db, submission_id, payload, principal)
+
+
+@router.post("/{submission_id}/edit", response_model=SubmissionRead)
+def edit_submission(
+    submission_id: int,
+    payload: SubmissionEdit,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(current_principal),
+):
+    """Changes a submitted response, within the form's edit window (T2.2.11)."""
+    return controller.edit_submission(db, submission_id, payload, principal)
 
 
 @router.post("/{submission_id}/reveal", response_model=SubmissionRead)

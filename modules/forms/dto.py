@@ -370,6 +370,68 @@ def media_ids_in_theme(theme: Any) -> set[int]:
     return {i for i in map(_media_id, refs) if i is not None}
 
 
+MAX_ENDINGS = 20
+MAX_HIDDEN_FIELDS = 20
+MAX_NOTIFY_RECIPIENTS = 50
+# 90 days
+MAX_EDIT_WINDOW_MINUTES = 60 * 24 * 90
+NotifyChannel = Literal["in_app", "email", "sms", "whatsapp", "slack"]
+_REDIRECT_URL = re.compile(r"^https?://[^\s/$.?#][^\s]*$", re.IGNORECASE)
+HiddenKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
+
+
+class EndingScreen(BaseModel):
+    """What a respondent sees after submitting (T2.2.2). The first ending
+    whose conditions all hold is shown; one without conditions catches the rest."""
+    model_config = ConfigDict(extra="forbid")
+    id: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=5000)
+    # sent on after the ending shows
+    redirect_url: Optional[str] = Field(default=None, max_length=2000)
+    # conditions: the score (0-100) range, and the last section of the path
+    # (the outcome a branch led to)
+    min_score: Optional[float] = Field(default=None, ge=0, le=100)
+    max_score: Optional[float] = Field(default=None, ge=0, le=100)
+    section_id: Optional[int] = None
+
+    @field_validator("redirect_url")
+    @classmethod
+    def _http_only(cls, v):
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if not _REDIRECT_URL.match(v):
+            raise ValueError("redirect_url must be an http:// or https:// address")
+        return v
+
+    @model_validator(mode="after")
+    def _range(self):
+        if self.min_score is not None and self.max_score is not None and self.min_score > self.max_score:
+            raise ValueError("an ending's min_score can't be above its max_score")
+        return self
+
+
+class NotifySettings(BaseModel):
+    """Who hears about each response (T2.2.3): employees of the form's organisation."""
+    model_config = ConfigDict(extra="forbid")
+    employee_ids: list[int] = Field(default_factory=list, max_length=MAX_NOTIFY_RECIPIENTS)
+    channels: list[NotifyChannel] = Field(default_factory=lambda: ["in_app", "email"], min_length=1)
+
+    @field_validator("employee_ids", "channels")
+    @classmethod
+    def _unique(cls, v):
+        return list(dict.fromkeys(v))
+
+
+class HiddenField(BaseModel):
+    """A value a prefilled link carries and the response keeps (T2.2.7),
+    e.g. the branch or the employee the response is about."""
+    model_config = ConfigDict(extra="forbid")
+    key: HiddenKey
+    label: Optional[str] = Field(default=None, max_length=120)
+
+
 class FormSettings(BaseModel):
     """How a form behaves, stored in forms.settings. A new setting needs a
     default here and no migration: rows without it read the default."""
@@ -380,6 +442,67 @@ class FormSettings(BaseModel):
     max_attempts: Optional[int] = Field(default=None, ge=1)
     results_revealed: bool = False
     theme: Optional[FormTheme] = None
+    # --- E2.2 ---
+    # responses are taken from opens_at until closes_at; closed_message is
+    # shown outside that window (T2.2.1)
+    opens_at: Optional[datetime] = None
+    closes_at: Optional[datetime] = None
+    closed_message: Optional[str] = Field(default=None, max_length=1000)
+    endings: list[EndingScreen] = Field(default_factory=list, max_length=MAX_ENDINGS)
+    notify: Optional[NotifySettings] = None
+    # one finished response per person, whatever max_attempts says (T2.2.4)
+    one_response_per_person: bool = False
+    # public links: save a draft and come back with a resume link (T2.2.5)
+    allow_resume: bool = False
+    # public links ask for a CAPTCHA when the server has one set up (T2.2.6)
+    captcha: bool = True
+    hidden_fields: list[HiddenField] = Field(default_factory=list, max_length=MAX_HIDDEN_FIELDS)
+    # questionnaires: who answered isn't stored (T2.2.8)
+    anonymous: bool = False
+    # a new order per attempt, kept for that attempt (T2.2.9)
+    shuffle_questions: bool = False
+    shuffle_options: bool = False
+    show_progress: bool = False
+    # questionnaires: the respondent may change a submitted response for
+    # this long after submitting it; None: never (T2.2.11)
+    edit_window_minutes: Optional[int] = Field(default=None, ge=1, le=MAX_EDIT_WINDOW_MINUTES)
+
+    @field_validator("closed_message")
+    @classmethod
+    def _blank_is_none(cls, v):
+        return v.strip() or None if v is not None else None
+
+    @field_validator("opens_at", "closes_at")
+    @classmethod
+    def _aware(cls, v):
+        if v is not None and v.tzinfo is None:
+            raise ValueError("opens_at and closes_at need a time zone (e.g. 2026-12-01T09:00:00Z)")
+        return v
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.opens_at and self.closes_at and self.closes_at <= self.opens_at:
+            raise ValueError("closes_at must be after opens_at")
+        ids = [e.id for e in self.endings]
+        if len(ids) != len(set(ids)):
+            raise ValueError("ending ids must be unique")
+        keys = [h.key for h in self.hidden_fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError("hidden field keys must be unique")
+        return self
+
+
+# Settings every row has stored since T1.4.2; the ones added later are
+# stored only when they differ from their default, so rows stay small and a
+# default can still change.
+CORE_SETTING_KEYS = ("time_limit_minutes", "max_attempts", "results_revealed", "theme")
+
+
+def stored_settings(settings: FormSettings) -> dict:
+    """Settings as forms.settings stores them (JSON: dates as text)."""
+    full = settings.model_dump(mode="json")
+    defaults = FormSettings().model_dump(mode="json")
+    return {k: v for k, v in full.items() if k in CORE_SETTING_KEYS or v != defaults.get(k)}
 
 
 class FormSettingsRead(FormSettings):
@@ -387,13 +510,13 @@ class FormSettingsRead(FormSettings):
     model_config = ConfigDict(extra="ignore")
 
 
-class FormSettingsPatch(BaseModel):
-    """FormUpdate's settings: keys sent replace the stored ones, the rest stay."""
-    model_config = ConfigDict(extra="forbid")
-    time_limit_minutes: Optional[int] = Field(default=None, ge=1)
-    max_attempts: Optional[int] = Field(default=None, ge=1)
-    results_revealed: bool = False
-    theme: Optional[FormTheme] = None
+class FormSettingsPatch(FormSettings):
+    """FormUpdate's settings: keys sent replace the stored ones, the rest
+    stay. The merged settings are checked again as a whole."""
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        return self
 
 
 # Before `settings`, these were top-level form attributes. They're still
@@ -762,3 +885,18 @@ class FormVersionDiff(BaseModel):
             getattr(part, kind) for part in (self.questions, self.sections)
             for kind in ("added", "removed", "changed")
         )
+
+
+class PrefillLinkCreate(BaseModel):
+    """A signed link (T2.2.7): `hidden` values are kept with the response and
+    can't be changed; `answers` (by question id) are where the respondent starts."""
+    model_config = ConfigDict(extra="forbid")
+    hidden: dict[str, Annotated[str, StringConstraints(max_length=500)]] = Field(default_factory=dict)
+    answers: dict[str, Any] = Field(default_factory=dict)
+    expires_in_days: Optional[int] = Field(default=None, ge=1, le=365)
+
+
+class PrefillLinkRead(BaseModel):
+    # add as ?prefill=<token> to the form's link
+    token: str
+    expires_at: Optional[datetime] = None

@@ -27,6 +27,9 @@ from .dto import (
     FormUpdate,
     FormVersionDiff,
     DiffItem,
+    PrefillLinkCreate,
+    PrefillLinkRead,
+    stored_settings,
     DiffPart,
 )
 from .model import SNAPSHOT_FIELD_ATTRS, Form, FormVersion, PublishedForm, VersionField
@@ -538,14 +541,29 @@ def _merged_settings(form: Form, patch: FormSettingsPatch) -> dict:
     current = FormSettingsRead.model_validate(form.settings or {}).model_dump()
     merged = {**current, **patch.model_dump(exclude_unset=True)}
     try:
-        return FormSettings.model_validate(merged).model_dump()
+        return stored_settings(FormSettings.model_validate(merged))
     except ValidationError as exc:
         raise AppError(422, "forms.invalid_settings", error=exc.errors()[0]['msg']) from None
+
+
+def _ensure_settings_people(db: Session, settings: dict, organisation_id: int) -> None:
+    """Everyone a form notifies (T2.2.3) works in the form's organisation."""
+    ids = ((settings or {}).get("notify") or {}).get("employee_ids") or []
+    if not ids:
+        return
+    from modules.employees import repository as employees_repository
+
+    known = employees_repository.ids_in_organisation(db, organisation_id=organisation_id, employee_ids=ids)
+    missing = [i for i in ids if i not in known]
+    if missing:
+        raise AppError(422, "forms.notify_unknown_people", ids=", ".join(map(str, missing)))
 
 
 def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal) -> Form:
     _ensure_units_in_organisation(db, payload.assigned_to_units, employee.organisation_id)
     data = payload.model_dump(exclude={"fields", *LEGACY_SETTING_KEYS})
+    data["settings"] = stored_settings(payload.settings)
+    _ensure_settings_people(db, data["settings"], employee.organisation_id)
     data["organisation_id"] = employee.organisation_id
     if _should_have_public_token(payload):
         data["public_token"] = _new_public_token()
@@ -681,6 +699,7 @@ def update_form(
         if payload.settings is None:
             raise AppError(422, "forms.settings_null")
         data["settings"] = _merged_settings(form, payload.settings)
+        _ensure_settings_people(db, data["settings"], employee.organisation_id)
     fields = _field_rows(payload.fields) if payload.fields is not None else None
     validate_branching(
         data.get("type") or form.type,
@@ -791,14 +810,23 @@ def list_assigned_to_me(
     if not forms:
         return [], total or 0
 
+    from sqlalchemy import and_, or_
+
+    from . import behaviour
+
     form_ids = [f.id for f in forms]
+    # an anonymous form's attempts carry the caller's keyed stand-in instead of their id
+    keys = [behaviour.respondent_key(fid, "employee", employee.id) for fid in form_ids]
     # only what the status needs, not the answers
     rows = db.execute(
         select(
             Submission.form_id, Submission.status, Submission.expires_at, Submission.submitted_at
         ).where(
             Submission.form_id.in_(form_ids),
-            Submission.user_id == employee.id,
+            or_(
+                Submission.user_id == employee.id,
+                and_(Submission.user_id.is_(None), Submission.respondent_key.in_(keys)),
+            ),
         )
     ).all()
 
@@ -848,3 +876,60 @@ def list_assigned_to_me(
     if my_status:
         return items[offset:offset + limit], len(items)
     return items, total
+
+
+# --- prefilled links (T2.2.7) -------------------------------------------------
+
+MAX_PREFILL_TOKEN_LENGTH = 4000
+
+
+def create_prefill_link(
+    db: Session, *, form_id: int, payload: PrefillLinkCreate, employee: EmployeePrincipal
+) -> PrefillLinkRead:
+    """Signs hidden values and starting answers for the form's published
+    version. Only declared hidden fields may be set, and answers must fit
+    their questions (as a draft would)."""
+    from datetime import timedelta
+
+    from modules.submissions.answer_rules import validate_answer_values
+
+    from . import behaviour
+
+    form = get_form(db, form_id, organisation_id=employee.organisation_id)
+    if not access.can_manage_form(employee, form):
+        raise AppError(403, "forms.manage_denied")
+    view = published(form)
+    if view is None:
+        raise AppError(409, "forms.prefill_unpublished")
+    declared = {h.key for h in behaviour.settings_of(form).hidden_fields}
+    unknown = [k for k in payload.hidden if k not in declared]
+    if unknown:
+        raise AppError(422, "forms.unknown_hidden_field", key=unknown[0])
+    from .dto import DISPLAY_TYPES
+
+    answerable = {str(f.id) for f in view.fields if f.type not in DISPLAY_TYPES}
+    stray = [k for k in payload.answers if k not in answerable]
+    if stray:
+        raise AppError(422, "forms.prefill_unknown_question", id=stray[0])
+    validate_answer_values(view, payload.answers, draft=True)
+    if any(f.type == "file" and str(f.id) in payload.answers for f in view.fields):
+        raise AppError(422, "forms.prefill_file_question")
+
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)
+        if payload.expires_in_days else None
+    )
+    token = behaviour.prefill_token(form.id, hidden=payload.hidden, answers=payload.answers, expires_at=expires_at)
+    if len(token) > MAX_PREFILL_TOKEN_LENGTH:
+        raise AppError(422, "forms.prefill_too_long")
+    # the values may name people: only which keys were set is logged
+    audit.record(
+        db, "form.prefill_link_created", entity=form,
+        data={
+            "hidden_keys": sorted(payload.hidden),
+            "answers": len(payload.answers),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        },
+    )
+    db.commit()
+    return PrefillLinkRead(token=token, expires_at=expires_at)

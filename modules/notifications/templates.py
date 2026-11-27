@@ -42,6 +42,11 @@ TEMPLATES: dict[str, dict[str, Text]] = {
         "en": Text("New response to {form}", "{respondent} answered {form}."),
         "ar": Text("رد جديد على {form}", "قام {respondent} بالإجابة على {form}."),
     },
+    # an anonymous form's response: nobody to name
+    "submission.received_anonymous": {
+        "en": Text("New response to {form}", "Someone answered {form}. The form is anonymous."),
+        "ar": Text("رد جديد على {form}", "أجاب أحدهم على {form}. هذا النموذج بدون أسماء."),
+    },
     "form.assigned": {
         "en": Text("New form to answer: {form}", "{form} was assigned to you. Please answer it by {due}."),
         "ar": Text("نموذج جديد للإجابة: {form}", "تم إسناد {form} إليك. يرجى الإجابة عليه قبل {due}."),

@@ -57,6 +57,19 @@ class Submission(Base):
     # details from first contact and is never overwritten by a submission.
     contact: Mapped[Optional[dict]] = mapped_column(JSON)
 
+    # E2.2. On an anonymous form, who answered is not stored: user_id and
+    # customer_id stay empty and this keyed hash (per form, see
+    # forms.behaviour.respondent_key) lets the same person find their draft
+    # and be held to one response.
+    respondent_key: Mapped[Optional[str]] = mapped_column(String(64))
+    # values from a signed prefilled link: {key: value}; the respondent can't change them
+    hidden_fields: Mapped[Optional[dict]] = mapped_column(JSONB)
+    # the shuffled order this attempt was shown: {"seed", "fields": [ids],
+    # "options": {field_id: [options]}}
+    question_order: Mapped[Optional[dict]] = mapped_column(JSONB)
+    # the respondent last changed this response after submitting it
+    edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
     customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), index=True)
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("employees.id"), index=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"), nullable=False, index=True)
@@ -74,6 +87,10 @@ class Submission(Base):
     __table_args__ = (
         Index("ix_submissions_form_user_status", "form_id", "user_id", "status"),
         Index("ix_submissions_form_customer_status", "form_id", "customer_id", "status"),
+        Index(
+            "ix_submissions_form_respondent_key", "form_id", "respondent_key",
+            postgresql_where=text("respondent_key IS NOT NULL"),
+        ),
         # the background expiry sweep (every minute)
         Index(
             "ix_submissions_open_expires_at",

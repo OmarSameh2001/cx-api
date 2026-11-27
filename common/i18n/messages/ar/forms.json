@@ -46,5 +46,18 @@
   "min_not_below_max": "يجب أن يكون الحد الأدنى أقل من الحد الأقصى",
   "slider_too_many_steps": "يمكن أن يحتوي شريط التمرير على {max} خطوة كحد أقصى",
   "slider_whole_steps": "يجب أن يكون الفرق بين الحد الأقصى والحد الأدنى عددًا صحيحًا من الخطوات",
-  "video_url": "يجب أن يكون الرابط من YouTube أو Vimeo"
+  "video_url": "يجب أن يكون الرابط من YouTube أو Vimeo",
+  "closed_message": "لا يستقبل هذا النموذج ردودًا: {message}",
+  "notify_unknown_people": "لا يمكن إشعار هؤلاء الأشخاص لأنهم ليسوا في مؤسستك: {ids}",
+  "prefill_unpublished": "انشر النموذج قبل إنشاء روابط معبأة مسبقًا",
+  "unknown_hidden_field": "\"{key}\" ليس من الحقول المخفية لهذا النموذج",
+  "prefill_unknown_question": "السؤال {id} غير موجود في النموذج المنشور",
+  "prefill_file_question": "لا يمكن تعبئة سؤال الملف مسبقًا",
+  "prefill_too_long": "القيم المعبأة مسبقًا أطول من أن تُوضع في رابط",
+  "redirect_url_http": "يجب أن يبدأ redirect_url بـ http:// أو https://",
+  "ending_score_range": "لا يمكن أن يكون min_score لشاشة النهاية أعلى من max_score",
+  "dates_need_zone": "يحتاج opens_at و closes_at إلى منطقة زمنية (مثل 2026-12-01T09:00:00Z)",
+  "closes_before_opens": "يجب أن يكون closes_at بعد opens_at",
+  "ending_ids_unique": "يجب ألا تتكرر أرقام شاشات النهاية",
+  "hidden_keys_unique": "يجب ألا تتكرر مفاتيح الحقول المخفية"
 }

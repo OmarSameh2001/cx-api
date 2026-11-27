@@ -16,6 +16,8 @@ from .dto import (
     FormVersionDiff,
     FormVersionRead,
     FormVersionSummary,
+    PrefillLinkCreate,
+    PrefillLinkRead,
 )
 from .model import Form, PublishedForm
 
@@ -187,3 +189,9 @@ def diff_version(
 
 def restore_version(db: Session, form_id: int, number: int, employee: EmployeePrincipal) -> FormRead:
     return _read(db, service.restore_version(db, form_id=form_id, number=number, employee=employee))
+
+
+def create_prefill_link(
+    db: Session, form_id: int, payload: PrefillLinkCreate, employee: EmployeePrincipal
+) -> PrefillLinkRead:
+    return service.create_prefill_link(db, form_id=form_id, payload=payload, employee=employee)

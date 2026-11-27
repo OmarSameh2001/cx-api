@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from common.dto import Page
 from modules.auth.dto import Principal
 
+from modules.forms import behaviour
 from modules.forms import service as forms_service
 from modules.forms.service import as_answered
 
@@ -12,7 +13,9 @@ from . import service
 from .dto import (
     RespondentForm,
     SubmissionDetail,
+    EndingRead,
     SubmissionDraftUpdate,
+    SubmissionEdit,
     SubmissionFinalize,
     SubmissionRead,
     SubmissionStartRequest,
@@ -77,19 +80,24 @@ def get_submission_detail(
 def get_respondent_form(
     db: Session, submission_id: int, principal: Principal
 ) -> RespondentForm:
-    form = service.get_respondent_form(
+    form, submission = service.get_respondent_form(
         db, submission_id=submission_id, principal=principal
     )
-    return RespondentForm.model_validate(form).model_copy(
-        update={"media": forms_service.media_for(db, form)}
-    )
+    read = RespondentForm.model_validate(form)
+    behaviour.apply_order(read.fields, submission.question_order)
+    settings = behaviour.settings_of(form)
+    return read.model_copy(update={
+        "media": forms_service.media_for(db, form),
+        "show_progress": settings.show_progress,
+        "anonymous": behaviour.is_anonymous(form),
+    })
 
 
 def start_submission(
     db: Session, payload: SubmissionStartRequest, principal: Principal
 ) -> SubmissionRead:
     submission = service.start_submission(
-        db, form_id=payload.form_id, principal=principal
+        db, form_id=payload.form_id, principal=principal, prefill=payload.prefill
     )
     return service.serialize_read(submission, principal=principal)
 
@@ -120,6 +128,18 @@ def submit_submission(
         submission_id=submission_id,
         answers=payload.answers,
         principal=principal,
+    )
+    read = service.serialize_read(submission, principal=principal)
+    ending = service.ending_for(submission)
+    read.ending = EndingRead.model_validate(ending) if ending else None
+    return read
+
+
+def edit_submission(
+    db: Session, submission_id: int, payload: SubmissionEdit, principal: Principal
+) -> SubmissionRead:
+    submission = service.edit_submission(
+        db, submission_id=submission_id, answers=payload.answers, principal=principal
     )
     return service.serialize_read(submission, principal=principal)
 

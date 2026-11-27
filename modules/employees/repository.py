@@ -116,3 +116,14 @@ def update_employee(db: Session, employee: Employee, *, data: dict) -> Employee:
 
 def delete_employee(db: Session, employee: Employee) -> None:
     db.delete(employee)
+
+
+def ids_in_organisation(db: Session, *, organisation_id: int, employee_ids) -> set[int]:
+    """Which of these employee ids belong to the organisation."""
+    ids = list(employee_ids or [])
+    if not ids:
+        return set()
+    rows = db.execute(
+        select(Employee.id).where(Employee.organisation_id == organisation_id, Employee.id.in_(ids))
+    ).scalars().all()
+    return set(rows)

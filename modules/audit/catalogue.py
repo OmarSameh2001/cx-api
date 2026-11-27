@@ -88,7 +88,10 @@ ACTIONS: dict[str, Action] = {
     "form.public_link_rotated": Action(S.NOTICE, "Public link replaced"),
     "form.public_link_revoked": Action(S.NOTICE, "Public link turned off"),
     "form.results_revealed": Action(S.NOTICE, "Results revealed to respondents"),
+    # a signed link with hidden values (who or which branch a response is about)
+    "form.prefill_link_created": Action(S.NOTICE, "Prefilled link created"),
     # --- submissions -----------------------------------------------------------
+    "submission.edited": Action(S.INFO, "Response changed after submitting"),
     "submission.score_changed": Action(S.WARNING, "Score changed by a regrade"),
     "submission.score_overridden": Action(S.WARNING, "Score overridden by hand"),
     # --- the audit log itself --------------------------------------------------

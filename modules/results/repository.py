@@ -18,6 +18,13 @@ def delete_values(db: Session, submission_id: int) -> None:
     db.execute(delete(SV).where(SV.submission_id == submission_id))
 
 
+def unit_of_values(db: Session, submission_id: int) -> Optional[int]:
+    """The unit a submission's answer rows count under, if it has rows."""
+    return db.execute(
+        select(SV.unit_id).where(SV.submission_id == submission_id).limit(1)
+    ).scalar_one_or_none()
+
+
 def _value_text():
     """Each answer as text, for grouping by answer: one row per selected
     option of a multiple-choice answer (the lateral join below), else the
