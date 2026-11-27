@@ -30,7 +30,7 @@ SUBMITS_PER_HOUR_PER_EMAIL = 5
 @router.get("/forms/{token}", response_model=PublicForm)
 def get_public_form(token: str, request: Request, db: Session = Depends(get_db)):
     enforce(f"public-load:{client_ip(request)}", FORM_LOADS_PER_MINUTE, 60)
-    return PublicForm.model_validate(service.get_public_form(db, token))
+    return service.public_form_read(db, token)
 
 
 @router.post(

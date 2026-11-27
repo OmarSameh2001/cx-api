@@ -1,11 +1,11 @@
 {
   "not_found": "النموذج غير موجود",
   "invalid_question_config": "إعدادات غير صالحة لسؤال من نوع {field_type}: {error}",
-  "branching_wrong_type": "التفرّع مسموح فقط في أسئلة الاختيار الواحد ونعم/لا",
+  "branching_wrong_type": "التفرّع مسموح فقط في أسئلة الاختيار الواحد والقائمة المنسدلة ونعم/لا",
   "branching_bad_keys": "يجب أن تكون مفاتيح التفرّع إجابات صحيحة، وصلنا: {bad}",
   "option_too_long": "يجب ألا يزيد الخيار عن {max_length} حرفًا، وأحد الخيارات طوله {length}",
   "too_few_options": "أسئلة {type} تتطلب خيارين على الأقل",
-  "right_answer_single": "يجب أن تكون الإجابة الصحيحة أحد الخيارات في سؤال الاختيار الواحد",
+  "right_answer_single": "يجب أن تكون الإجابة الصحيحة أحد الخيارات في سؤال {type}",
   "right_answer_multi_empty": "يجب أن تحدد الإجابة الصحيحة خيارًا واحدًا على الأقل في سؤال الاختيار المتعدد",
   "right_answer_multi_values": "يجب أن تكون كل الإجابات الصحيحة من بين الخيارات في سؤال الاختيار المتعدد",
   "right_answer_boolean": "يجب أن تكون الإجابة الصحيحة لسؤال نعم/لا 'true' أو 'false'",
@@ -37,5 +37,14 @@
   "branching_unknown_target": "يشير التفرّع إلى قسم غير معروف {target}",
   "branching_backwards": "يمكن للقسم {source} الانتقال إلى الأمام فقط، وليس إلى القسم {target}",
   "branching_outside_section": "يجب أن تنتمي أسئلة التفرّع إلى قسم",
-  "branching_one_per_section": "لا يمكن أن يحتوي القسم {section} إلا على سؤال تفرّع واحد"
+  "branching_one_per_section": "لا يمكن أن يحتوي القسم {section} إلا على سؤال تفرّع واحد",
+  "too_many_options": "يمكن أن يحتوي السؤال على {max} خيارًا كحد أقصى",
+  "question_empty": "يجب ألا يكون نص السؤال فارغًا",
+  "option_images_too_many": "لا يمكن أن يزيد عدد صور الخيارات عن عدد الخيارات",
+  "values_distinct": "يجب ألا تتكرر قيم {what}",
+  "min_over_max": "يجب ألا يكون الحد الأدنى أكبر من الحد الأقصى",
+  "min_not_below_max": "يجب أن يكون الحد الأدنى أقل من الحد الأقصى",
+  "slider_too_many_steps": "يمكن أن يحتوي شريط التمرير على {max} خطوة كحد أقصى",
+  "slider_whole_steps": "يجب أن يكون الفرق بين الحد الأقصى والحد الأدنى عددًا صحيحًا من الخطوات",
+  "video_url": "يجب أن يكون الرابط من YouTube أو Vimeo"
 }

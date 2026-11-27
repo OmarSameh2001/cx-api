@@ -11,12 +11,13 @@ from modules.auth.dto import EmployeePrincipal, Principal
 from modules.events import service as events
 from modules.forms import access as form_access
 from modules.forms import repository as forms_repository
+from modules.forms.dto import DISPLAY_TYPES, respondent_config
 from modules.forms.model import Form, FormField
 from modules.forms.service import as_answered, branch_key, ordered_sections, published
 from modules.results import service as results_service
 
 from . import repository
-from .answer_rules import validate_answer_values
+from .answer_rules import is_incomplete, validate_answer_values
 from .dto import (
     SubmissionDetail,
     SubmissionDetailField,
@@ -26,7 +27,9 @@ from .model import Submission
 
 
 GRACE = timedelta(seconds=30)
-AUTO_GRADABLE = {"single_choice", "multi_choice", "boolean", "text"}
+# the scoring hook: types _correctness_fraction can mark. Scale, rating,
+# NPS and Likert points are E2.4 (T2.4.2).
+AUTO_GRADABLE = {"single_choice", "multi_choice", "boolean", "text", "dropdown"}
 
 
 def _now() -> datetime:
@@ -128,7 +131,7 @@ def _correctness_fraction(field: FormField, answer: Any) -> float:
         return 1.0 if _normalize_multi(answer) == _normalize_multi(field.right_answer) else 0.0
     if field.type == "boolean":
         return 1.0 if str(answer).strip().lower() == field.right_answer.strip().lower() else 0.0
-    if field.type == "single_choice":
+    if field.type in ("single_choice", "dropdown"):
         return 1.0 if str(answer).strip() == field.right_answer.strip() else 0.0
     if field.type == "text":
         if answer is None or not str(answer).strip():
@@ -138,16 +141,9 @@ def _correctness_fraction(field: FormField, answer: Any) -> float:
 
 
 def _required_missing(field: FormField, answers: dict[str, Any]) -> bool:
-    if not field.is_required:
+    if not field.is_required or field.type in DISPLAY_TYPES:
         return False
-    provided = answers.get(str(field.id))
-    if provided is None:
-        return True
-    if isinstance(provided, str) and provided == "":
-        return True
-    if isinstance(provided, (list, tuple, set)) and len(provided) == 0:
-        return True
-    return False
+    return is_incomplete(field, answers.get(str(field.id)))
 
 
 def _visited_section_ids(form: Form, answers: dict[str, Any]) -> Optional[set[int]]:
@@ -212,8 +208,13 @@ def _prune_to_path(
     """Keep only answers to the form's current fields on sections the
     respondent's path went through. A draft can outlive a structural edit, so
     answers to removed fields are dropped too."""
-    keep = {str(f.id) for f in form.fields} - _skipped_field_ids(form, visited)
+    keep = _answerable_ids(form) - _skipped_field_ids(form, visited)
     return {k: v for k, v in answers.items() if k in keep}
+
+
+def _answerable_ids(form: Form) -> set[str]:
+    """Answer keys of the questions; display blocks take no answer."""
+    return {str(f.id) for f in form.fields if f.type not in DISPLAY_TYPES}
 
 
 def _validate_required(
@@ -556,7 +557,7 @@ def save_draft(
     # merge answers (partial allowed); only the version's own questions are
     # kept, with values bounded by type and size
     form = as_answered(submission)
-    known = {str(f.id) for f in form.fields}
+    known = _answerable_ids(form)
     incoming = {k: v for k, v in (answers or {}).items() if k in known}
     validate_answer_values(form, incoming, draft=True)
     merged = dict(submission.answers or {})
@@ -773,6 +774,7 @@ def serialize_detail(
                 data.options = f.options
                 data.right_answer = f.right_answer
                 data.help_text = f.help_text
+                data.config = respondent_config(f.type, f.config)
             fields.append(data)
 
     answers = submission.answers if (is_owner or is_reviewer) and revealed else None

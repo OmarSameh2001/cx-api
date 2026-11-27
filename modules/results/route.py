@@ -6,7 +6,7 @@ from modules.auth.dto import EmployeePrincipal
 from modules.auth.route import current_employee
 
 from . import controller
-from .dto import ResultsQuery, ResultsResponse
+from .dto import ResultsQuery, ResultsResponse, SummaryQuery, SummaryResponse
 
 router = APIRouter(prefix="/results", tags=["results"])
 
@@ -20,3 +20,14 @@ def query_results(
     employee: EmployeePrincipal = Depends(current_employee),
 ):
     return controller.query_results(db, payload, employee)
+
+
+# Every question of a form, summarised the way its type is read: counts per
+# option, averages, NPS groups, grid counts. Reads only.
+@router.post("/summary", response_model=SummaryResponse)
+def summarize_form(
+    payload: SummaryQuery,
+    db: Session = Depends(get_db),
+    employee: EmployeePrincipal = Depends(current_employee),
+):
+    return controller.summary(db, payload, employee)

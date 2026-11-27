@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from common.dto import Page
 from modules.auth.dto import Principal
 
+from modules.forms import service as forms_service
+from modules.forms.service import as_answered
+
 from . import service
 from .dto import (
     RespondentForm,
@@ -64,7 +67,11 @@ def get_submission_detail(
     submission = service.get_submission(
         db, submission_id=submission_id, principal=principal
     )
-    return service.serialize_detail(submission, principal=principal)
+    detail = service.serialize_detail(submission, principal=principal)
+    if detail.fields and detail.fields[0].question is not None and submission.form is not None:
+        # questions are shown (revealed): so are their pictures
+        detail.media = forms_service.media_for(db, as_answered(submission), with_theme=False)
+    return detail
 
 
 def get_respondent_form(
@@ -73,7 +80,9 @@ def get_respondent_form(
     form = service.get_respondent_form(
         db, submission_id=submission_id, principal=principal
     )
-    return RespondentForm.model_validate(form)
+    return RespondentForm.model_validate(form).model_copy(
+        update={"media": forms_service.media_for(db, form)}
+    )
 
 
 def start_submission(

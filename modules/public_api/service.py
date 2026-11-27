@@ -22,7 +22,7 @@ from modules.submissions.service import (
     record_results,
 )
 
-from .dto import PublicCustomer, PublicSubmitRequest
+from .dto import PublicCustomer, PublicForm, PublicSubmitRequest
 
 
 def _get_form_for_public(db: Session, token: str) -> PublishedForm:
@@ -45,6 +45,14 @@ def _get_form_for_public(db: Session, token: str) -> PublishedForm:
 
 def get_public_form(db: Session, token: str) -> PublishedForm:
     return _get_form_for_public(db, token)
+
+
+def public_form_read(db: Session, token: str) -> PublicForm:
+    """The form behind a public link, with links to its pictures."""
+    from modules.forms.service import media_for
+
+    view = _get_form_for_public(db, token)
+    return PublicForm.model_validate(view).model_copy(update={"media": media_for(db, view)})
 
 
 def _resolve_customer(db: Session, form: Form, provided: PublicCustomer) -> Customer:

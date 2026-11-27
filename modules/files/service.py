@@ -10,6 +10,7 @@
     files.get(...) / files.list_files(...) / files.link(...)
     files.attach(...) / files.detach(...)   tie it to a record (no commit: caller's transaction)
     files.put_bytes(...)  store bytes the server made (exports...)
+    files.use_form_media(...) / media_links(...) / copy_form_media(...)   pictures in forms
     files.effective_limits(...) / set_limit(...) / delete_limit(...)
 
 Every call checks organisation and permissions itself, so callers can't skip
@@ -99,7 +100,8 @@ def _ensure_can_view(db: Session, file: StoredFile, actor: Actor) -> None:
     if _is_owner(file, actor):
         return
     if isinstance(actor, EmployeePrincipal):
-        if file.purpose == "org_logo" or actor.is_platform_admin:
+        # logos and form pictures are shown to the whole organisation
+        if file.purpose in ("org_logo", "form_media") or actor.is_platform_admin:
             return
         if file.attached_type == "submission" and file.attached_id is not None:
             from modules.forms import access as form_access
@@ -480,6 +482,11 @@ def add(
         if purpose == "form_answer":
             form, field = _file_question(db, form_id, field_id, organisation_id)
             question_field = field
+        elif purpose == "form_media":
+            if not can_upload_form_media(actor):
+                raise AppError(403, "files.form_media_denied")
+            # tied to its form when the form is saved (use_form_media)
+            form_id = field_id = None
         elif purpose == "org_logo":
             if not _can_manage_org(actor, organisation_id):
                 raise AppError(403, "files.logo_admin_only")
@@ -770,6 +777,95 @@ def put_bytes(
     db.commit()
     db.refresh(file)
     return file
+
+
+# --- form pictures (E2.1) -----------------------------------------------------------
+# Uploaded unattached by someone who edits forms, then attached to the form
+# whose save first names them. They stay while the form does: an older
+# version may still show a picture the draft no longer uses. A duplicated
+# form gets copies, so deleting either form leaves the other one whole.
+
+_FORM_EDIT_PERMISSIONS = {"forms:create", "forms:update", "forms:manage"}
+
+
+def can_upload_form_media(actor: EmployeePrincipal) -> bool:
+    return actor.is_admin or bool(_FORM_EDIT_PERMISSIONS & set(actor.permissions or []))
+
+
+def use_form_media(db: Session, *, form_id: int, organisation_id: int, file_ids: set[int]) -> None:
+    """Checks the pictures a form's save names and attaches the new ones to
+    the form. Each must be a ready form picture of the organisation, either
+    unused or already this form's. No commit: part of the form's save."""
+    if not file_ids:
+        return
+    found = repository.get_files(db, sorted(file_ids))
+    for file_id in sorted(file_ids):
+        file = found.get(file_id)
+        usable = (
+            file is not None
+            and file.organisation_id == organisation_id
+            and file.purpose == "form_media"
+            and file.status == "ready"
+            and (file.attached_type is None or (file.attached_type, file.attached_id) == ("form", form_id))
+        )
+        if not usable:
+            raise AppError(422, "files.form_media_invalid", file_id=file_id)
+        if file.attached_type is None:
+            attach(db, file, attached_type="form", attached_id=form_id)
+            # deleting the form deletes its pictures (delete_for_form)
+            file.form_id = form_id
+
+
+def media_links(db: Session, *, organisation_id: int, file_ids: set[int]) -> dict[str, str]:
+    """Links to the form pictures with these ids, by id. Pictures that are
+    missing, deleted, or another organisation's are left out."""
+    if not file_ids:
+        return {}
+    out: dict[str, str] = {}
+    for file_id, file in repository.get_files(db, sorted(file_ids)).items():
+        if file.organisation_id != organisation_id or file.purpose != "form_media" or file.status != "ready":
+            continue
+        try:
+            out[str(file_id)], _ = signed_link_for(file, inline=True)
+        except AppError:
+            # storage is down: the form still opens, without its pictures
+            logger.warning("files: no link for form picture {}", file_id)
+    return out
+
+
+def copy_form_media(
+    db: Session, *, organisation_id: int, file_ids: set[int], owner_employee_id: int
+) -> dict[int, int]:
+    """Copies of the organisation's form pictures with these ids, for a
+    duplicated form: old id -> new id. The copies are unattached until the
+    new form's save attaches them. Pictures that can't be used are skipped."""
+    copies: dict[int, int] = {}
+    for file_id, file in repository.get_files(db, sorted(file_ids)).items():
+        if file.organisation_id != organisation_id or file.purpose != "form_media" or file.status != "ready":
+            continue
+        try:
+            data = get_storage(file.provider).get_bytes(
+                file.key, max_bytes=file.size + 1, content_type=file.content_type
+            )
+        except StorageError as exc:
+            raise AppError(503, "files.storage_unavailable") from exc
+        provider = default_provider_name()
+        key = _new_key(organisation_id, "form_media", file.name)
+        try:
+            info = get_storage(provider).put_bytes(key, data, content_type=file.content_type)
+        except StorageError as exc:
+            raise AppError(503, "files.storage_unavailable") from exc
+        copy = repository.add_file(
+            db,
+            StoredFile(
+                organisation_id=organisation_id, purpose="form_media", provider=provider, key=key,
+                name=file.name, content_type=file.content_type, size=info.size, checksum=info.etag,
+                status="ready", processing="none", width=file.width, height=file.height,
+                owner_employee_id=owner_employee_id, completed_at=_now(),
+            ),
+        )
+        copies[file_id] = copy.id
+    return copies
 
 
 # --- form answers ----------------------------------------------------------------

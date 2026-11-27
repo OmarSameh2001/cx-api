@@ -98,6 +98,12 @@ class Form(Base):
     def results_revealed(self, value: bool) -> None:
         self._set_setting("results_revealed", bool(value))
 
+    @property
+    def theme(self) -> Optional[dict]:
+        """Cover, background and colours of the respondent view (T2.1.15)."""
+        theme = self._setting("theme")
+        return theme if isinstance(theme, dict) else None
+
 
 class FormField(Base):
     __tablename__ = "form_fields"

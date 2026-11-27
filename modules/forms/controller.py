@@ -17,7 +17,7 @@ from .dto import (
     FormVersionRead,
     FormVersionSummary,
 )
-from .model import Form
+from .model import Form, PublishedForm
 
 
 def list_forms(
@@ -58,6 +58,7 @@ def _read(db: Session, form: Form) -> FormRead:
         update={
             "has_submissions": service.has_submissions(db, form),
             "has_unpublished_changes": service.has_unpublished_changes(form),
+            "media": service.media_for(db, form),
         }
     )
 
@@ -174,6 +175,7 @@ def get_version(db: Session, form_id: int, number: int, employee: EmployeePrinci
         id=version.id, number=version.number, published_at=version.published_at,
         published_by=version.published_by, type=snapshot.get("type", form.type),
         sections=snapshot.get("sections"), fields=fields,
+        media=service.media_for(db, PublishedForm(form, version), with_theme=False),
     )
 
 

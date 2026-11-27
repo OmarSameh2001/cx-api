@@ -1,7 +1,10 @@
+import re
 from datetime import datetime
-from typing import Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator,
+)
 
 from modules.files.dto import LimitWrite
 
@@ -16,46 +19,253 @@ FieldType = Literal[
     "email",
     "file",
     "scale",
+    # E2.1
+    "long_text",
+    "dropdown",
+    "number",
+    "nps",
+    "rating",
+    "likert",
+    "choice_grid",
+    "checkbox_grid",
+    "currency",
+    "slider",
+    "image_choice",
+    "time",
+    # display blocks: shown to respondents, never answered
+    "heading",
+    "paragraph",
+    "image",
+    "video",
 ]
 SubmitterType = Literal["employee", "customer"]
 FormType = Literal["questionnaire", "exam"]
 
-AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean"}
-BRANCHABLE_TYPES = {"single_choice", "boolean"}
+AUTO_GRADABLE_TYPES = {"single_choice", "multi_choice", "boolean", "dropdown"}
+BRANCHABLE_TYPES = {"single_choice", "boolean", "dropdown"}
+# questions answered by picking one or more of `options`
+CHOICE_TYPES = {"single_choice", "multi_choice", "dropdown", "image_choice"}
+# rows x columns, answered with {row: column} ({row: [columns]} for checkboxes)
+GRID_TYPES = {"likert", "choice_grid", "checkbox_grid"}
+# content between questions: no answer, no score, never required
+DISPLAY_TYPES = {"heading", "paragraph", "image", "video"}
+# a display block may have no title; a question always has one
+UNTITLED_TYPES = {"image", "video"}
 # form_fields.options is ARRAY(String(255))
 MAX_OPTION_LENGTH = 255
+MAX_OPTIONS = 200
+MAX_GRID_ROWS = 50
+MAX_GRID_COLUMNS = 10
+MAX_LONG_TEXT_LENGTH = 20000
+CURRENCIES = ("SAR", "EGP", "AED", "USD")
 
 # A jump target: a section id, or "end" to finish the form.
 SectionTarget = Union[int, Literal["end"]]
 
 
-# --- question config (T1.4.1) ------------------------------------------------
+# --- question config (T1.4.1, E2.1) --------------------------------------------
 # form_fields.config holds what a question type needs beyond its options. Each
 # type has one schema; a key it doesn't declare is rejected. Respondents are
 # served the config, so nothing secret (answer keys, scoring) belongs in it.
+# Stored without its defaults; every read fills them in (config_with_defaults).
+
+
+class MediaRef(BaseModel):
+    """An image uploaded for the form (files purpose `form_media`). Readers
+    get its link from the form's `media` map, keyed by file id."""
+    model_config = ConfigDict(extra="forbid")
+    file_id: int = Field(gt=0)
+    alt: Optional[str] = Field(default=None, max_length=255)
+
+
+Label = Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)]]
+GridLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_OPTION_LENGTH)]
+
+
+def _distinct(values: list[str], what: str) -> list[str]:
+    if len(set(values)) != len(values):
+        raise ValueError(f"{what} must be distinct")
+    return values
 
 
 class NoConfig(BaseModel):
-    """For types with nothing to configure yet."""
+    """Every question type's config: an optional image shown with the
+    question (T2.1.14)."""
     model_config = ConfigDict(extra="forbid")
+    image: Optional[MediaRef] = None
 
 
 class FileQuestionConfig(LimitWrite):
     """Limits for this question's uploads. Like an organisation's limits they
-    can only tighten size and types; image settings override."""
+    can only tighten size and types; image settings override. (`image` here
+    is the upload's image policy, so the question's picture is `image_ref`.)"""
+    model_config = ConfigDict(extra="forbid")
+    image_ref: Optional[MediaRef] = None
+
+
+class ChoiceConfig(NoConfig):
+    # one image per option, by position; null where an option has none
+    option_images: Optional[list[Optional[MediaRef]]] = Field(default=None, max_length=MAX_OPTIONS)
+
+
+class ImageChoiceConfig(ChoiceConfig):
+    # pick several pictures instead of one
+    multiple: bool = False
+
+
+class ScaleConfig(NoConfig):
+    """A linear scale from `min` to `max`; the endpoint labels stay in
+    `options` ([low label, high label]). Defaults: 1 to 5, as before."""
+    min: Literal[0, 1] = 1
+    max: int = Field(default=5, ge=3, le=10)
+    # respondents may answer "na" instead of a point
+    allow_na: bool = False
+
+
+class NpsConfig(NoConfig):
+    """0 to 10: 9–10 promoters, 7–8 passives, 0–6 detractors."""
+    low_label: Label = None
+    high_label: Label = None
+
+
+class RatingConfig(NoConfig):
+    levels: int = Field(default=5, ge=3, le=10)
+
+
+class LongTextConfig(NoConfig):
+    max_length: Optional[int] = Field(default=None, ge=1, le=MAX_LONG_TEXT_LENGTH)
+
+
+class NumberConfig(NoConfig):
+    min: Optional[float] = None
+    max: Optional[float] = None
+    integer_only: bool = False
+    unit: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=16)]] = None
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("min must not be greater than max")
+        return self
+
+
+class CurrencyConfig(NoConfig):
+    currency: Literal["SAR", "EGP", "AED", "USD"] = "USD"
+    min: Optional[float] = Field(default=None, ge=0)
+    max: Optional[float] = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("min must not be greater than max")
+        return self
+
+
+MAX_SLIDER_STEPS = 1000
+
+
+class SliderConfig(NoConfig):
+    min: float = 0
+    max: float = 100
+    step: float = Field(default=1, gt=0)
+    low_label: Label = None
+    high_label: Label = None
+
+    @model_validator(mode="after")
+    def _fits(self):
+        if self.min >= self.max:
+            raise ValueError("min must be less than max")
+        steps = (self.max - self.min) / self.step
+        if steps > MAX_SLIDER_STEPS:
+            raise ValueError(f"a slider has at most {MAX_SLIDER_STEPS} steps")
+        if abs(steps - round(steps)) > 1e-9:
+            raise ValueError("max - min must be a whole number of steps")
+        return self
+
+
+DEFAULT_LIKERT_COLUMNS = (
+    "Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree",
+)
+
+
+class GridConfig(NoConfig):
+    """Statements (rows) answered on the same columns."""
+    rows: list[GridLabel] = Field(min_length=1, max_length=MAX_GRID_ROWS)
+    columns: list[GridLabel] = Field(min_length=2, max_length=MAX_GRID_COLUMNS)
+
+    @field_validator("rows")
+    @classmethod
+    def _distinct_rows(cls, v):
+        return _distinct(v, "rows")
+
+    @field_validator("columns")
+    @classmethod
+    def _distinct_columns(cls, v):
+        return _distinct(v, "columns")
+
+
+class LikertConfig(GridConfig):
+    """A grid whose columns are an ordered agreement scale, left to right."""
+    columns: list[GridLabel] = Field(
+        default_factory=lambda: list(DEFAULT_LIKERT_COLUMNS), min_length=2, max_length=MAX_GRID_COLUMNS
+    )
+
+
+class ParagraphConfig(BaseModel):
+    """Heading and paragraph blocks: `question` is the title, `help_text` the body."""
     model_config = ConfigDict(extra="forbid")
 
 
+class ImageBlockConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image: MediaRef
+
+
+# YouTube or Vimeo; the respondent view embeds the video from its id
+_VIDEO_URL = re.compile(
+    r"^https://(www\.)?(youtube\.com/watch\?v=[\w-]{6,20}([&#].*)?|youtu\.be/[\w-]{6,20}(\?.*)?"
+    r"|youtube\.com/(embed|shorts)/[\w-]{6,20}(\?.*)?|(player\.)?vimeo\.com/(video/)?\d{4,12}(\?.*)?)$"
+)
+
+
+class VideoBlockConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+
+    @field_validator("url")
+    @classmethod
+    def _known_host(cls, v):
+        if not _VIDEO_URL.match(v):
+            raise ValueError("url must be a YouTube or Vimeo link")
+        return v
+
+
 QUESTION_CONFIG_SCHEMAS: dict[str, type[BaseModel]] = {
-    "single_choice": NoConfig,
-    "multi_choice": NoConfig,
+    "single_choice": ChoiceConfig,
+    "multi_choice": ChoiceConfig,
     "boolean": NoConfig,
     "text": NoConfig,
     "date": NoConfig,
     "phone_number": NoConfig,
     "email": NoConfig,
     "file": FileQuestionConfig,
-    "scale": NoConfig,
+    "scale": ScaleConfig,
+    "long_text": LongTextConfig,
+    "dropdown": NoConfig,
+    "number": NumberConfig,
+    "nps": NpsConfig,
+    "rating": RatingConfig,
+    "likert": LikertConfig,
+    "choice_grid": GridConfig,
+    "checkbox_grid": GridConfig,
+    "currency": CurrencyConfig,
+    "slider": SliderConfig,
+    "image_choice": ImageChoiceConfig,
+    "time": NoConfig,
+    "heading": ParagraphConfig,
+    "paragraph": ParagraphConfig,
+    "image": ImageBlockConfig,
+    "video": VideoBlockConfig,
 }
 
 
@@ -65,29 +275,99 @@ def _error_text(exc: ValidationError) -> str:
     )
 
 
+def _dumped(parsed: BaseModel, **kwargs) -> dict:
+    data = parsed.model_dump(exclude_none=True, **kwargs)
+    if "option_images" in data:
+        # keep the positions: an option without an image is a null, not a gap
+        data["option_images"] = [
+            img.model_dump(exclude_none=True) if img else None
+            for img in getattr(parsed, "option_images") or []
+        ]
+    return {k: v for k, v in data.items() if v != {}}
+
+
 def validate_question_config(field_type: str, config: Optional[dict]) -> Optional[dict]:
-    """The config as stored: validated, unset keys dropped, None when empty."""
-    if not config:
-        return None
+    """The config as stored: validated, defaults and unset keys dropped, None
+    when empty. Types whose config has required keys (grids, image and video
+    blocks) are checked even when none is sent."""
     try:
-        parsed = QUESTION_CONFIG_SCHEMAS[field_type].model_validate(config)
+        parsed = QUESTION_CONFIG_SCHEMAS[field_type].model_validate(config or {})
     except ValidationError as exc:
         raise ValueError(f"invalid config for a {field_type} question: {_error_text(exc)}") from None
-    data = {k: v for k, v in parsed.model_dump(exclude_none=True).items() if v != {}}
-    return data or None
+    return _dumped(parsed, exclude_defaults=True) or None
+
+
+def read_config(field_type: Any, config: Any) -> Optional[BaseModel]:
+    """A stored config with its defaults, or None when it doesn't fit the
+    type's schema (written by hand, or by an older version)."""
+    schema = QUESTION_CONFIG_SCHEMAS.get(field_type)
+    if schema is None or not isinstance(config, (dict, type(None))):
+        return None
+    try:
+        return schema.model_validate(config or {})
+    except ValidationError:
+        return None
+
+
+def config_with_defaults(field_type: Any, config: Any) -> Optional[dict]:
+    """A stored config as editors get it: every key the type declares, with
+    its default where unset. One that doesn't fit is served as stored."""
+    parsed = read_config(field_type, config)
+    if parsed is None:
+        return config if isinstance(config, dict) else None
+    return _dumped(parsed) or None
 
 
 def respondent_config(field_type: Any, config: Any) -> Optional[dict]:
     """A stored config as respondents get it: only the keys the type's schema
-    declares, so nothing written around the schema (by hand, or by an older
-    version) is served to them."""
+    declares, with defaults, so nothing written around the schema (by hand, or
+    by an older version) is served to them."""
     schema = QUESTION_CONFIG_SCHEMAS.get(field_type)
-    if schema is None or not isinstance(config, dict):
+    if schema is None or not isinstance(config, (dict, type(None))):
         return None
-    return {k: v for k, v in config.items() if k in schema.model_fields} or None
+    parsed = read_config(field_type, config)
+    if parsed is not None:
+        return _dumped(parsed) or None
+    return {k: v for k, v in (config or {}).items() if k in schema.model_fields} or None
+
+
+def _media_id(ref: Any) -> Optional[int]:
+    if isinstance(ref, dict):
+        file_id = ref.get("file_id")
+        if isinstance(file_id, int) and not isinstance(file_id, bool) and file_id > 0:
+            return file_id
+    return None
+
+
+def media_ids_in_config(config: Any) -> set[int]:
+    """File ids of the form images a stored config names."""
+    if not isinstance(config, dict):
+        return set()
+    refs = [config.get("image"), config.get("image_ref"), *(config.get("option_images") or [])]
+    return {i for i in map(_media_id, refs) if i is not None}
 
 
 # --- form settings (T1.4.2) --------------------------------------------------
+
+
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+class FormTheme(BaseModel):
+    """How the respondent view looks (T2.1.15)."""
+    model_config = ConfigDict(extra="forbid")
+    cover: Optional[MediaRef] = None
+    background_image: Optional[MediaRef] = None
+    # buttons, selections and the progress bar
+    primary_color: Optional[HexColor] = None
+    background_color: Optional[HexColor] = None
+
+
+def media_ids_in_theme(theme: Any) -> set[int]:
+    if not isinstance(theme, dict):
+        return set()
+    refs = [theme.get("cover"), theme.get("background_image")]
+    return {i for i in map(_media_id, refs) if i is not None}
 
 
 class FormSettings(BaseModel):
@@ -99,6 +379,7 @@ class FormSettings(BaseModel):
     # None: unlimited
     max_attempts: Optional[int] = Field(default=None, ge=1)
     results_revealed: bool = False
+    theme: Optional[FormTheme] = None
 
 
 class FormSettingsRead(FormSettings):
@@ -112,6 +393,7 @@ class FormSettingsPatch(BaseModel):
     time_limit_minutes: Optional[int] = Field(default=None, ge=1)
     max_attempts: Optional[int] = Field(default=None, ge=1)
     results_revealed: bool = False
+    theme: Optional[FormTheme] = None
 
 
 # Before `settings`, these were top-level form attributes. They're still
@@ -152,7 +434,8 @@ class FormSectionPayload(BaseModel):
 
 
 class FormFieldBase(BaseModel):
-    question: str = Field(min_length=1)
+    # a display block's title or text; image and video blocks may leave it empty
+    question: str
     type: FieldType
     options: Optional[list[str]] = None
     right_answer: Optional[str] = None
@@ -161,7 +444,7 @@ class FormFieldBase(BaseModel):
     is_required: bool = False
     score_weight: float = 0.0
     section_id: Optional[int] = None
-    # answer -> section to jump to; only for single_choice / boolean
+    # answer -> section to jump to; only for single_choice, dropdown and boolean
     branching: Optional[dict[str, SectionTarget]] = None
     # per-type settings; see QUESTION_CONFIG_SCHEMAS
     config: Optional[dict[str, Any]] = None
@@ -174,6 +457,7 @@ class FormFieldCreate(FormFieldBase):
 
     # The rules below run on writes only. FormFieldRead serves what is stored,
     # so a row that predates a rule (or was fixed by hand) can't break reads.
+
 
     @field_validator("config")
     @classmethod
@@ -191,7 +475,7 @@ class FormFieldCreate(FormFieldBase):
             return None
         type_ = info.data.get("type")
         if type_ not in BRANCHABLE_TYPES:
-            raise ValueError("branching is only allowed on single_choice and boolean fields")
+            raise ValueError("branching is only allowed on single_choice, dropdown and boolean fields")
         if type_ == "boolean":
             v = {k.strip().lower(): t for k, t in v.items()}
             allowed = {"true", "false"}
@@ -209,9 +493,11 @@ class FormFieldCreate(FormFieldBase):
     @classmethod
     def _validate_options(cls, v, info):
         type_ = info.data.get("type")
-        if type_ in ("single_choice", "multi_choice"):
+        if type_ in CHOICE_TYPES:
             if not v or len(v) < 2:
                 raise ValueError(f"{type_} fields require at least 2 options")
+            if len(v) > MAX_OPTIONS:
+                raise ValueError(f"a question has at most {MAX_OPTIONS} options")
         too_long = [o for o in v or [] if len(o) > MAX_OPTION_LENGTH]
         if too_long:
             raise ValueError(
@@ -230,9 +516,9 @@ class FormFieldCreate(FormFieldBase):
             # semantic similarity); blank means the question isn't graded
             return v.strip() or None
         options = info.data.get("options") or []
-        if type_ == "single_choice":
+        if type_ in ("single_choice", "dropdown"):
             if v not in options:
-                raise ValueError("right_answer must be one of options for single_choice")
+                raise ValueError(f"right_answer must be one of options for {type_}")
         elif type_ == "multi_choice":
             parts = {p.strip() for p in v.split(",") if p.strip()}
             if not parts:
@@ -244,12 +530,39 @@ class FormFieldCreate(FormFieldBase):
                 raise ValueError("right_answer for boolean must be 'true' or 'false'")
         return v
 
+    @model_validator(mode="after")
+    def _validate_type_rules(self):
+        if not self.question and self.type not in UNTITLED_TYPES:
+            raise ValueError("question must not be empty")
+        if self.config is None and (self.id is None or "config" in self.model_fields_set):
+            # a config that is needed (grid rows, a block's picture) can't be left out
+            # (an existing field sent without one keeps what it has: see _field_rows)
+            self.config = validate_question_config(self.type, None)
+        if self.type in DISPLAY_TYPES:
+            # nothing to answer: whatever came with the block is dropped
+            self.options = None
+            self.right_answer = None
+            self.is_required = False
+            self.score_weight = 0.0
+            self.branching = None
+        elif self.type in GRID_TYPES:
+            self.options = None
+        images = (self.config or {}).get("option_images")
+        if images is not None and len(images) > len(self.options or []):
+            raise ValueError("option_images can't have more entries than options")
+        return self
+
 
 class FormFieldRead(FormFieldBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     # stable across versions (see FormField.key); set by the server
     key: Optional[str] = None
+
+    @field_validator("config")
+    @classmethod
+    def _with_defaults(cls, v, info):
+        return config_with_defaults(info.data.get("type"), v)
 
 
 class FormBase(BaseModel):
@@ -375,6 +688,9 @@ class FormRead(FormBase):
     # the draft differs from current_version (or nothing is published yet);
     # filled in by the controller
     has_unpublished_changes: bool = False
+    # links to the images the draft and the theme use, by file id (E2.1);
+    # filled in by the controller. Links expire: reload the form for new ones.
+    media: dict[str, str] = {}
 
 
 class FormSummary(BaseModel):
@@ -415,6 +731,7 @@ class FormVersionRead(FormVersionRef):
     type: str
     sections: Optional[list[dict]] = None
     fields: list[FormFieldRead] = []
+    media: dict[str, str] = {}
 
 
 class DiffItem(BaseModel):

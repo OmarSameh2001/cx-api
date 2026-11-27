@@ -1,11 +1,11 @@
 {
   "not_found": "Form not found",
   "invalid_question_config": "invalid config for a {field_type} question: {error}",
-  "branching_wrong_type": "branching is only allowed on single_choice and boolean fields",
+  "branching_wrong_type": "branching is only allowed on single_choice, dropdown and boolean fields",
   "branching_bad_keys": "branching keys must be valid answers, got: {bad}",
   "option_too_long": "options must be at most {max_length} characters, got one of {length}",
   "too_few_options": "{type} fields require at least 2 options",
-  "right_answer_single": "right_answer must be one of options for single_choice",
+  "right_answer_single": "right_answer must be one of options for {type}",
   "right_answer_multi_empty": "right_answer must list at least one option for multi_choice",
   "right_answer_multi_values": "right_answer values must all be in options for multi_choice",
   "right_answer_boolean": "right_answer for boolean must be 'true' or 'false'",
@@ -37,5 +37,14 @@
   "branching_unknown_target": "Branching targets unknown section {target}",
   "branching_backwards": "Section {source} can only jump forward, not to section {target}",
   "branching_outside_section": "Branching questions must belong to a section",
-  "branching_one_per_section": "Section {section} can only have one branching question"
+  "branching_one_per_section": "Section {section} can only have one branching question",
+  "too_many_options": "a question has at most {max} options",
+  "question_empty": "question must not be empty",
+  "option_images_too_many": "option_images can't have more entries than options",
+  "values_distinct": "{what} must be distinct",
+  "min_over_max": "min must not be greater than max",
+  "min_not_below_max": "min must be less than max",
+  "slider_too_many_steps": "a slider has at most {max} steps",
+  "slider_whole_steps": "max - min must be a whole number of steps",
+  "video_url": "url must be a YouTube or Vimeo link"
 }

@@ -18,5 +18,7 @@
   "bad_mime_types": "يجب أن تكون الأنواع المسموح بها أنواع MIME مثل image/png أو image/*",
   "storage_unavailable": "تخزين الملفات غير متاح",
   "kind_not_allowed": "لا يمكن رفع هذا النوع من الملفات هنا",
-  "no_variant": "لا توجد نسخة {variant} من هذا الملف"
+  "no_variant": "لا توجد نسخة {variant} من هذا الملف",
+  "form_media_denied": "يمكن فقط لمن يعدّلون النماذج رفع صور النماذج",
+  "form_media_invalid": "لا يمكن استخدام الصورة {file_id} في هذا النموذج؛ ارفعها مرة أخرى"
 }

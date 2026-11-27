@@ -18,5 +18,7 @@
   "bad_mime_types": "allowed_types must be MIME types like image/png or image/*",
   "storage_unavailable": "File storage is unavailable",
   "kind_not_allowed": "This kind of file can't be uploaded here",
-  "no_variant": "File has no {variant} version"
+  "no_variant": "File has no {variant} version",
+  "form_media_denied": "Only people who edit forms can upload form pictures",
+  "form_media_invalid": "Picture {file_id} can't be used in this form; upload it again"
 }

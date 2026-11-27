@@ -2,8 +2,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from modules.forms.dto import SectionTarget, respondent_config
-from modules.submissions.dto import RespondentSection
+from modules.forms.dto import FormTheme, SectionTarget, respondent_config
+from modules.submissions.dto import RespondentSection, _theme_or_none
 
 
 class PublicCustomer(BaseModel):
@@ -47,6 +47,14 @@ class PublicForm(BaseModel):
     fields: list[PublicFormField] = []
     # typed, so stored-only keys (score weights) never reach the public
     sections: Optional[list[RespondentSection]] = None
+    theme: Optional[FormTheme] = None
+    # links to the images the questions and the theme use, by file id
+    media: dict[str, str] = {}
+
+    @field_validator("theme", mode="before")
+    @classmethod
+    def _stored_theme(cls, v):
+        return _theme_or_none(v)
 
 
 class PublicSubmitResponse(BaseModel):

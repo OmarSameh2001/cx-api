@@ -10,10 +10,17 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from modules.forms.dto import FieldType, FormType, SubmitterType
+from modules.forms.dto import FormType, SubmitterType
 
 
 SectionRef = Union[int, Literal["end"]]
+
+# The types a model can write without per-type config. Grids, sliders,
+# currency, image choice and display blocks are added in the builder.
+GeneratedFieldType = Literal[
+    "single_choice", "multi_choice", "dropdown", "boolean", "text", "long_text",
+    "date", "time", "phone_number", "email", "file", "scale", "nps", "rating", "number",
+]
 
 
 class GeneratedBranch(BaseModel):
@@ -27,11 +34,11 @@ class GeneratedBranch(BaseModel):
 
 class GeneratedField(BaseModel):
     question: str
-    type: FieldType
+    type: GeneratedFieldType
     options: Optional[list[str]] = Field(
         default=None,
         description=(
-            "single_choice/multi_choice: at least 2 distinct options. "
+            "single_choice/multi_choice/dropdown: at least 2 distinct options. "
             "scale: exactly 2 labels [label for 1, label for 5] (may be empty strings). "
             "Omit for every other type."
         ),
@@ -39,7 +46,7 @@ class GeneratedField(BaseModel):
     right_answer: Optional[str] = Field(
         default=None,
         description=(
-            "Exams only. single_choice: one option's exact text. multi_choice: comma-separated "
+            "Exams only. single_choice/dropdown: one option's exact text. multi_choice: comma-separated "
             'exact option texts. boolean: "true" or "false". text: a short reference answer. '
             "Omit for other types and for questionnaires."
         ),
@@ -52,7 +59,7 @@ class GeneratedField(BaseModel):
     branching: Optional[list[GeneratedBranch]] = Field(
         default=None,
         description=(
-            "Questionnaires with sections only, single_choice/boolean only, "
+            "Questionnaires with sections only, single_choice/dropdown/boolean only, "
             "at most one branching question per section."
         ),
     )

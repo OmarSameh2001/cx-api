@@ -118,3 +118,74 @@ def aggregate(
         stmt = stmt.group_by(*groups).order_by(*(g.asc().nulls_last() for g in groups))
     rows = db.execute(stmt.limit(limit + 1)).mappings().all()
     return [dict(r) for r in rows[:limit]], len(rows) > limit
+
+
+GRID_TYPES = ("likert", "choice_grid", "checkbox_grid")
+
+
+def grid_counts(
+    db: Session,
+    *,
+    organisation_id: int,
+    form_id: int,
+    form_version_ids: Optional[Sequence[int]] = None,
+    question_keys: Optional[Sequence[str]] = None,
+    unit_ids: Optional[Sequence[int]] = None,
+    subject_employee_ids: Optional[Sequence[int]] = None,
+    submitted_from: Optional[datetime] = None,
+    submitted_to: Optional[datetime] = None,
+    limit: int = 5000,
+) -> list[dict[str, Any]]:
+    """Answers per row and column of grid questions: rows of
+    {question_key, row, column, count}. A grid answer is {row: column}, or
+    {row: [columns]} for checkbox grids, in value_json."""
+    rows = (
+        func.jsonb_each(
+            case(
+                (func.jsonb_typeof(SV.value_json) == "object", SV.value_json),
+                else_=literal_column("'{}'::jsonb"),
+            )
+        )
+        .table_valued("key", "value")
+        .lateral("grid_rows")
+    )
+    columns = (
+        func.jsonb_array_elements_text(
+            case(
+                (func.jsonb_typeof(rows.c.value) == "array", rows.c.value),
+                else_=func.jsonb_build_array(rows.c.value),
+            )
+        )
+        .table_valued("value")
+        .lateral("grid_columns")
+    )
+    stmt = (
+        select(
+            SV.question_key.label("question_key"),
+            rows.c.key.label("row"),
+            columns.c.value.label("column"),
+            func.count().label("count"),
+        )
+        .select_from(SV)
+        .join(rows, true())
+        .join(columns, true())
+        .where(
+            SV.organisation_id == organisation_id,
+            SV.form_id == form_id,
+            SV.question_type.in_(GRID_TYPES),
+        )
+    )
+    if form_version_ids:
+        stmt = stmt.where(SV.form_version_id.in_(form_version_ids))
+    if question_keys:
+        stmt = stmt.where(SV.question_key.in_(question_keys))
+    if unit_ids is not None:
+        stmt = stmt.where(SV.unit_id.in_(unit_ids))
+    if subject_employee_ids:
+        stmt = stmt.where(SV.subject_employee_id.in_(subject_employee_ids))
+    if submitted_from is not None:
+        stmt = stmt.where(SV.submitted_at >= submitted_from)
+    if submitted_to is not None:
+        stmt = stmt.where(SV.submitted_at < submitted_to)
+    stmt = stmt.group_by(SV.question_key, rows.c.key, columns.c.value).limit(limit)
+    return [dict(r) for r in db.execute(stmt).mappings().all()]

@@ -42,9 +42,11 @@ class SubmissionValue(Base):
     question_type: Mapped[str] = mapped_column(String(32), nullable=False)
     section_id: Mapped[Optional[int]] = mapped_column(Integer)
 
-    # the answer, in the column for its type: choice and text answers in
-    # value_text, scales in value_number, yes/no in value_bool, dates in
-    # value_date; multiple choice (a list of options) and files in value_json
+    # the answer, in the column for its type: choice, text and time answers
+    # (and a scale's "na") in value_text; scale, NPS, rating, number, currency
+    # and slider answers in value_number; yes/no in value_bool; dates in
+    # value_date; multiple choice (a list of options), grids ({row: column},
+    # {row: [columns]}) and files in value_json
     value_text: Mapped[Optional[str]] = mapped_column(Text)
     value_number: Mapped[Optional[float]] = mapped_column(Float)
     value_bool: Mapped[Optional[bool]] = mapped_column(Boolean)

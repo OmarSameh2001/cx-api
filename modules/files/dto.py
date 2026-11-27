@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from common.services.images import OutputFormat
 
-PurposeName = Literal["form_answer", "org_logo"]
+PurposeName = Literal["form_answer", "org_logo", "form_media"]
 
 
 class UploadRequest(BaseModel):

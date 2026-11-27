@@ -3,10 +3,20 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from modules.forms.dto import SectionTarget, respondent_config
+from modules.forms.dto import FormTheme, SectionTarget, respondent_config
 
 
 SubmissionStatusT = Literal["in_progress", "submitted", "late", "expired"]
+
+
+def _theme_or_none(v: Any) -> Optional[FormTheme]:
+    """A stored theme that no longer fits is left out rather than break the form."""
+    if v is None or isinstance(v, FormTheme):
+        return v
+    try:
+        return FormTheme.model_validate(v)
+    except ValueError:
+        return None
 
 
 class SubmissionStartRequest(BaseModel):
@@ -53,6 +63,8 @@ class SubmissionDetailField(BaseModel):
     options: Optional[list[str]] = None
     right_answer: Optional[str] = None
     help_text: Optional[str] = None
+    # what the answer means: scale range, grid rows and columns, images
+    config: Optional[dict[str, Any]] = None
     # on a section the respondent's branching path skipped (finalized
     # submissions only): the question was never shown, not left unanswered
     skipped: bool = False
@@ -73,6 +85,8 @@ class SubmissionDetail(SubmissionRead):
     # (reveal-gated like the score)
     scores: Optional[dict[str, Any]] = None
     fields: list[SubmissionDetailField] = []
+    # links to the images the questions use, by file id
+    media: dict[str, str] = {}
 
 
 class RespondentField(BaseModel):
@@ -116,3 +130,11 @@ class RespondentForm(BaseModel):
     max_attempts: Optional[int] = None
     fields: list[RespondentField] = []
     sections: Optional[list[RespondentSection]] = None
+    theme: Optional[FormTheme] = None
+    # links to the images the questions and the theme use, by file id
+    media: dict[str, str] = {}
+
+    @field_validator("theme", mode="before")
+    @classmethod
+    def _stored_theme(cls, v):
+        return _theme_or_none(v)

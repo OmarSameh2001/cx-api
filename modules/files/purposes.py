@@ -64,6 +64,18 @@ PURPOSES: dict[str, Purpose] = {
             attach_types=("submission",),
             public=True,
         ),
+        # pictures in a form: on questions, options, blocks, the cover and
+        # background (E2.1). Uploaded by the form's editors, attached to the
+        # form when it is saved, and shown to everyone who opens the form.
+        Purpose(
+            "form_media",
+            max_mb=5,
+            allowed_types=("image/png", "image/jpeg", "image/webp"),
+            image=ImagePolicy(max_side=1600, quality=85, format="webp", thumb_side=320),
+            attach_types=("form",),
+            # a respondent may take a while over a form
+            link_ttl_seconds=3600,
+        ),
         Purpose(
             "org_logo",
             max_mb=2,

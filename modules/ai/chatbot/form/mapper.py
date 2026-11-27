@@ -36,7 +36,7 @@ def _boolean_key(value: str) -> Optional[str]:
 
 
 def _options(f: GeneratedField) -> Optional[list[str]]:
-    if f.type in ("single_choice", "multi_choice"):
+    if f.type in ("single_choice", "multi_choice", "dropdown"):
         return list(dict.fromkeys(o.strip() for o in f.options or [] if o.strip()))
     if f.type == "scale":
         labels = [o.strip() for o in f.options or []]
@@ -52,7 +52,7 @@ def _right_answer(type_: str, options: Optional[list[str]], value: Optional[str]
     if not value or not value.strip():
         return None
     opts = options or []
-    if type_ == "single_choice":
+    if type_ in ("single_choice", "dropdown"):
         return value.strip() if value.strip() in opts else None
     if type_ == "multi_choice":
         kept = list(dict.fromkeys(p.strip() for p in value.split(",") if p.strip() in opts))
@@ -98,7 +98,7 @@ def _field(
     can_branch: bool,
 ) -> dict:
     options = _options(f)
-    # only gradable types (choice, boolean, text) can come back with an answer
+    # only gradable types (choice, dropdown, boolean, text) can come back with an answer
     right_answer = _right_answer(f.type, options, f.right_answer) if is_exam else None
     graded = right_answer is not None
     branching = None

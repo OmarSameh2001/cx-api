@@ -53,9 +53,9 @@ def post(client, body):
 def test_settings_are_stored_and_served(client, created):
     res = post(client, questionnaire(settings={"max_attempts": 3, "results_revealed": True}))
     assert res.status_code == 201, res.text
-    assert created[0].settings == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True}
+    assert created[0].settings == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True, "theme": None}
     body = res.json()
-    assert body["settings"] == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True}
+    assert body["settings"] == {"time_limit_minutes": None, "max_attempts": 3, "results_revealed": True, "theme": None}
     # the old top-level copies are still served
     assert (body["max_attempts"], body["results_revealed"]) == (3, True)
 
@@ -80,7 +80,7 @@ def test_exam_defaults_to_one_attempt(client, created):
         "fields": [{"question": "Q", "type": "boolean", "right_answer": "true"}],
     })
     assert res.status_code == 201, res.text
-    assert created[0].settings == {"time_limit_minutes": 20, "max_attempts": 1, "results_revealed": False}
+    assert created[0].settings == {"time_limit_minutes": 20, "max_attempts": 1, "results_revealed": False, "theme": None}
 
 
 @pytest.mark.parametrize("settings", [{"shuffle": True}, {"max_attempts": 0}, {"time_limit_minutes": "x"}])
@@ -104,7 +104,7 @@ def patch(client, body):
 def test_update_merges_settings(client, editable):
     res = patch(client, {"settings": {"max_attempts": 4}})
     assert res.status_code == 200, res.text
-    assert editable.settings == {"time_limit_minutes": 30, "max_attempts": 4, "results_revealed": False}
+    assert editable.settings == {"time_limit_minutes": 30, "max_attempts": 4, "results_revealed": False, "theme": None}
     assert res.json()["settings"]["time_limit_minutes"] == 30
 
 
@@ -112,7 +112,7 @@ def test_update_accepts_top_level_settings(client, editable):
     # what the current builder sends
     res = patch(client, {"time_limit_minutes": None, "max_attempts": None, "results_revealed": True})
     assert res.status_code == 200, res.text
-    assert editable.settings == {"time_limit_minutes": None, "max_attempts": None, "results_revealed": True}
+    assert editable.settings == {"time_limit_minutes": None, "max_attempts": None, "results_revealed": True, "theme": None}
 
 
 def test_update_null_results_revealed_leaves_it(client, editable):

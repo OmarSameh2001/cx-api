@@ -17,6 +17,8 @@ from modules.units import repository as units_repository
 from . import access, repository
 from .dto import (
     LEGACY_SETTING_KEYS,
+    media_ids_in_config,
+    media_ids_in_theme,
     FormCreate,
     FormFieldCreate,
     FormSettings,
@@ -480,6 +482,45 @@ def restore_version(db: Session, *, form_id: int, number: int, employee: Employe
     return repository.restore_draft(db, form, sections=snapshot.get("sections"), fields=fields)
 
 
+# --- pictures (E2.1) -------------------------------------------------------------
+
+
+def _media_ids(fields, settings: Optional[dict]) -> set[int]:
+    """File ids of the pictures these fields (rows or objects) and settings name."""
+    ids: set[int] = set()
+    for f in fields or []:
+        config = f.get("config") if isinstance(f, dict) else getattr(f, "config", None)
+        ids |= media_ids_in_config(config)
+    return ids | media_ids_in_theme((settings or {}).get("theme"))
+
+
+def media_for(db: Session, form, *, with_theme: bool = True) -> dict[str, str]:
+    """Links to the pictures a form (a Form, a PublishedForm or a version's
+    fields) shows, by file id."""
+    from modules.files import service as files
+
+    ids = _media_ids(form.fields, {"theme": form.theme} if with_theme else None)
+    return files.media_links(db, organisation_id=form.organisation_id, file_ids=ids)
+
+
+def _use_media(db: Session, form: Form, ids: set[int]) -> None:
+    from modules.files import service as files
+
+    files.use_form_media(db, form_id=form.id, organisation_id=form.organisation_id, file_ids=ids)
+
+
+def _remap_media(value: Any, copies: dict[int, int]) -> Any:
+    """`value` with every picture reference pointing at its copy."""
+    if isinstance(value, dict):
+        out = {k: _remap_media(v, copies) for k, v in value.items()}
+        if isinstance(out.get("file_id"), int) and out["file_id"] in copies:
+            out["file_id"] = copies[out["file_id"]]
+        return out
+    if isinstance(value, list):
+        return [_remap_media(v, copies) for v in value]
+    return value
+
+
 def _field_rows(fields: list[FormFieldCreate]) -> list[dict]:
     """Field payloads as repository rows. An existing field sent without
     `config` keeps its config, so a client that doesn't know about config
@@ -513,7 +554,10 @@ def create_form(db: Session, *, payload: FormCreate, employee: EmployeePrincipal
     # an active form is live from creation: version 1 is published with it
     publish = data.get("is_active", True)
 
+    media = _media_ids(fields, data.get("settings"))
+
     def before_commit(form: Form) -> None:
+        _use_media(db, form, media)
         audit.record_created(db, form)
         if publish:
             _publish(db, form, employee.id)
@@ -566,9 +610,24 @@ def duplicate_form(db: Session, *, form_id: int, employee: EmployeePrincipal) ->
         {key: copy.deepcopy(getattr(f, key)) for key in _COPIED_FIELD_ATTRS}
         for f in form.fields
     ]
+    # the copy gets its own pictures, so deleting either form keeps the other whole
+    media = _media_ids(fields, data["settings"])
+    if media:
+        from modules.files import service as files
+
+        copies = files.copy_form_media(
+            db, organisation_id=employee.organisation_id, file_ids=media, owner_employee_id=employee.id,
+        )
+        fields = [{**f, "config": _remap_media(f["config"], copies)} for f in fields]
+        data["settings"] = _remap_media(data["settings"], copies)
+        media = set(copies.values())
+
+    def before_commit(copied: Form) -> None:
+        _use_media(db, copied, media)
+        audit.record_created(db, copied, data={"copied_from": form.id})
+
     return repository.create_form(
-        db, data=data, fields=fields, created_by=employee.id,
-        before_commit=lambda copied: audit.record_created(db, copied, data={"copied_from": form.id}),
+        db, data=data, fields=fields, created_by=employee.id, before_commit=before_commit,
     )
 
 
@@ -631,11 +690,14 @@ def update_form(
         else [{"section_id": f.section_id, "branching": f.branching} for f in form.fields],
     )
     before = audit.snapshot(form)
-    return repository.update_form(
-        db, form, data=data, fields=fields,
+    media = _media_ids(fields, data.get("settings"))
+
+    def before_commit(f: Form) -> None:
+        _use_media(db, f, media)
         # draft questions are logged when they are published, not on every save
-        before_commit=lambda f: audit.record_changes(db, f, before),
-    )
+        audit.record_changes(db, f, before)
+
+    return repository.update_form(db, form, data=data, fields=fields, before_commit=before_commit)
 
 
 def delete_form(db: Session, *, form_id: int, employee: EmployeePrincipal) -> None:

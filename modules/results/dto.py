@@ -76,3 +76,54 @@ class ResultsResponse(BaseModel):
     truncated: bool
     # what the caller's results cover: the whole organisation, or their units
     scope: Literal["organisation", "units"]
+
+
+# --- per-question summaries (E2.1) ---------------------------------------------
+
+
+class SummaryQuery(BaseModel):
+    form_id: int
+    filters: ResultsFilters = Field(default_factory=ResultsFilters)
+
+
+class ValueCount(BaseModel):
+    # an option, "true"/"false", a point ("7"), or "na"
+    value: str
+    count: int
+
+
+class NpsSummary(BaseModel):
+    promoters: int
+    passives: int
+    detractors: int
+    # % promoters - % detractors, -100 to 100; None without answers
+    score: Optional[float] = None
+
+
+class GridRowSummary(BaseModel):
+    row: str
+    # column -> answers
+    counts: dict[str, int]
+
+
+class QuestionSummary(BaseModel):
+    key: str
+    field_id: int
+    type: str
+    question: str
+    # submissions that answered it
+    answered: int = 0
+    # number answers (scale, NPS, rating, number, currency, slider)
+    avg: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    # answers per value, every value the question offers first, in order
+    distribution: Optional[list[ValueCount]] = None
+    nps: Optional[NpsSummary] = None
+    grid: Optional[list[GridRowSummary]] = None
+
+
+class SummaryResponse(BaseModel):
+    form_id: int
+    scope: Literal["organisation", "units"]
+    questions: list[QuestionSummary]
